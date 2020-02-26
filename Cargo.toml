@@ -1,0 +1,35 @@
+[package]
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+description = "Implementation of a DKG"
+documentation = ""
+edition = "2018"
+exclude = [""]
+homepage = "https://maidsafe.net"
+license = "GPL-3.0"
+name = "bls_dkg"
+readme = "README.md"
+repository = "https://github.com/maidsafe/BLS-DKG"
+version = "0.1.0"
+
+[dependencies]
+fnv = "~1.0.6"
+itertools = "~0.8.0"
+lazy_static = "~1.2.0"
+log = "~0.3.8"
+maidsafe_utilities = "~0.18.0"
+pom = { version = "~1.1.0", optional = true }
+proptest = { version = "~0.8.6", optional = true }
+rand = "~0.4.2"
+rand_core = "0.2.1"
+serde = "~1.0.66"
+serde_derive = "~1.0.66"
+tiny-keccak = "~1.5.0"
+unwrap = "~1.2.1"
+threshold_crypto = "~0.3.1"
+failure = "~0.1.5"
+
+[dev-dependencies]
+clap = "~2.32.0"
+criterion = "~0.2.5"
+pom = "~1.1.0"
+walkdir = "~2.2.7"
