@@ -17,7 +17,7 @@ use failure::Fail;
 use maidsafe_utilities::serialisation;
 use rand;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use threshold_crypto::pairing::{CurveAffine, Field};
 use threshold_crypto::{
@@ -161,19 +161,13 @@ impl<P: PublicId> AccumulateInitial<P> {
         }
     }
 
-    fn add_initial(&mut self, dkg_msg: DkgMessage<P>) -> Option<(usize, usize, BTreeSet<P>)> {
-        let (sender, m, n, member_list) = if let DkgMessage::Initial {
-            key_gen_id,
-            m,
-            n,
-            member_list,
-        } = dkg_msg
-        {
-            (key_gen_id, m, n, member_list)
-        } else {
-            return None;
-        };
-
+    fn add_initial(
+        &mut self,
+        m: usize,
+        n: usize,
+        sender: u64,
+        member_list: BTreeSet<P>,
+    ) -> Option<(usize, usize, BTreeSet<P>)> {
         if self.senders.insert(sender) {
             return None;
         }
@@ -191,9 +185,89 @@ impl<P: PublicId> AccumulateInitial<P> {
     }
 }
 
-/// A synchronous algorithm for dealerless distributed key generation.
+#[derive(Default)]
+struct AccumulateContribute<P: PublicId> {
+    pub_keys: BTreeSet<P>,
+    // Indexed by (id, idx), value is the `part`.
+    contributes: BTreeMap<(P, u64), Part>,
+}
+
+impl<P: PublicId> AccumulateContribute<P> {
+    fn new(pub_keys: BTreeSet<P>) -> AccumulateContribute<P> {
+        AccumulateContribute {
+            pub_keys,
+            contributes: BTreeMap::new(),
+        }
+    }
+
+    // returns `true` when received contributes from all expected senders.
+    fn add_contribute(&mut self, sender_id: P, sender_idx: u64, part: Part) -> bool {
+        if !self.pub_keys.contains(&sender_id) {
+            return false;
+        }
+        let _ = self.contributes.insert((sender_id, sender_idx), part);
+        self.contributes.len() == self.pub_keys.len()
+    }
+}
+
+#[derive(Default)]
+struct AccumulateComplain<P: PublicId> {
+    pub_keys: BTreeSet<P>,
+    // Indexed by complaining targets.
+    complains: BTreeMap<P, BTreeSet<P>>,
+}
+
+impl<P: PublicId> AccumulateComplain<P> {
+    fn new(pub_keys: BTreeSet<P>) -> AccumulateComplain<P> {
+        AccumulateComplain {
+            pub_keys,
+            complains: BTreeMap::new(),
+        }
+    }
+
+    // TODO: accusation shall be validated.
+    fn add_complain(&mut self, sender_id: P, target_id: P, _msg: Vec<u8>) {
+        if !self.pub_keys.contains(&sender_id) || !self.pub_keys.contains(&target_id) {
+            return;
+        }
+
+        match self.complains.entry(target_id.clone()) {
+            Entry::Occupied(mut entry) => {
+                let _ = entry.get_mut().insert(sender_id);
+            }
+            Entry::Vacant(entry) => {
+                let mut targets = BTreeSet::new();
+                let _ = targets.insert(target_id);
+                let _ = entry.insert(targets);
+            }
+        }
+    }
+
+    fn finalize_complain(&self) -> BTreeSet<P> {
+        let mut failings = BTreeSet::new();
+        for (target_id, accusers) in self.complains.iter() {
+            if accusers.len() * 3 > self.pub_keys.len() * 2 {
+                let _ = failings.insert(target_id.clone());
+            }
+        }
+        failings
+    }
+}
+
+/// An algorithm for dealerless distributed key generation.
 ///
-/// It requires that all nodes handle all messages in the exact same order.
+/// This is trying to follow the protocol as suggested at
+/// https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol
+///
+/// A normal usage flow will be:
+///   a, call `initialize` first to generate an instance.
+///   b, multicasting the return `DkgMessage` to all participants.
+///   c, call `handle_message` function to handle the incoming `DkgMessage` and multicasting the
+///      resulted `DkgMessage` (if has) to all participants.
+///   d, call `finalize_complain` to complete the complain phase. (This separate call may need to
+///      depend on a separate timer & checker against the key generator's current status)
+///   e, repeat step c when there is incoming `DkgMessage`.
+///   f, call `generate` to get the public-key set and secret-key share, if the procedure finalized.
 pub struct KeyGen<S: SecretId> {
     /// Our node ID.
     our_id: S::PublicId,
@@ -209,6 +283,10 @@ pub struct KeyGen<S: SecretId> {
     dkg_phase: DkgPhases,
     /// Accumulates initializations.
     acc_initial: AccumulateInitial<S::PublicId>,
+    /// Accumulates contributes.
+    acc_contribute: AccumulateContribute<S::PublicId>,
+    /// Accumulates Complains.
+    acc_complain: AccumulateComplain<S::PublicId>,
 }
 
 impl<S: SecretId> KeyGen<S> {
@@ -234,6 +312,8 @@ impl<S: SecretId> KeyGen<S> {
             threshold,
             dkg_phase: DkgPhases::Initial,
             acc_initial: AccumulateInitial::new(),
+            acc_contribute: AccumulateContribute::new(pub_keys.clone()),
+            acc_complain: AccumulateComplain::new(pub_keys.clone()),
         };
 
         Ok((
@@ -247,18 +327,57 @@ impl<S: SecretId> KeyGen<S> {
         ))
     }
 
-    /// Handles an incoming initialize message. Creates the `Contribute` message once quorumn
-    /// agreement reached, and the message should be multicast to all nodes.
-    pub fn handle_initialize(
+    /// Dispatching an incoming dkg message.
+    pub fn handle_message(
         &mut self,
         sec_key: &S,
         rng: &mut dyn rand::Rng,
         dkg_msg: DkgMessage<S::PublicId>,
-    ) -> Result<Option<DkgMessage<S::PublicId>>, Error> {
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
+        match dkg_msg {
+            DkgMessage::Initial {
+                key_gen_id,
+                m,
+                n,
+                member_list,
+            } => self.handle_initialize(sec_key, rng, m, n, key_gen_id, member_list),
+
+            DkgMessage::Contribution { key_gen_id, part } => {
+                self.handle_contribute(sec_key, rng, key_gen_id, part)
+            }
+            DkgMessage::Complain {
+                key_gen_id,
+                target,
+                msg,
+            } => self.handle_complain(sec_key, key_gen_id, target, msg),
+            DkgMessage::Justification { key_gen_id, part } => {
+                self.handle_justificate(sec_key, key_gen_id, part)
+            }
+            DkgMessage::Commitment { key_gen_id, commit } => {
+                if let Err(err) = self.handle_commit(sec_key, key_gen_id, commit) {
+                    Err(err)
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    // Handles an incoming initialize message. Creates the `Contribute` message once quorumn
+    // agreement reached, and the message should be multicast to all nodes.
+    fn handle_initialize(
+        &mut self,
+        sec_key: &S,
+        rng: &mut dyn rand::Rng,
+        m: usize,
+        n: usize,
+        sender: u64,
+        member_list: BTreeSet<S::PublicId>,
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         if self.dkg_phase != DkgPhases::Initial {
             return Err(Error::Unknown);
         }
-        if let Some((m, n, member_list)) = self.acc_initial.add_initial(dkg_msg) {
+        if let Some((m, n, member_list)) = self.acc_initial.add_initial(m, n, sender, member_list) {
             self.threshold = m;
             self.pub_keys = member_list;
             self.dkg_phase = DkgPhases::Contribute;
@@ -278,31 +397,149 @@ impl<S: SecretId> KeyGen<S> {
                 .enumerate()
                 .map(encrypt)
                 .collect::<Result<Vec<_>, Error>>()?;
-            return Ok(Some(DkgMessage::Contribution {
+
+            let mut result = Vec::new();
+            result.push(DkgMessage::Contribution {
                 key_gen_id: self.our_idx,
                 part: Part(commit, rows),
-            }));
+            });
+            return Ok(Some(result));
         }
         Ok(None)
     }
 
-    /// Handles a `Contribute` message.
-    /// If it is invalid, returns a `Complain` message to be broadcast.
-    /// If all contributed, retuns a `Commitment` message to be broadcast.
-    pub fn handle_contribute(
+    // Handles a `Contribute` message.
+    // If it is invalid, sends a `Complain` message targeting the sender to be broadcast.
+    // If all contributed, retuns a `Commitment` message to be broadcast.
+    fn handle_contribute(
         &mut self,
         sec_key: &S,
-        dkg_msg: DkgMessage<S::PublicId>,
-    ) -> Result<Option<DkgMessage<S::PublicId>>, Error> {
+        rng: &mut dyn rand::Rng,
+        sender_idx: u64,
+        part: Part,
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         if self.dkg_phase != DkgPhases::Contribute {
             return Err(Error::Unknown);
         }
-        let (sender_idx, part) =
-            if let DkgMessage::Contribution { key_gen_id, part } = dkg_msg.clone() {
-                (key_gen_id, part)
+
+        let sender_id = self
+            .node_id_from_index(sender_idx)
+            .ok_or(Error::UnknownSender)?;
+
+        if !self
+            .acc_contribute
+            .add_contribute(sender_id, sender_idx, part)
+        {
+            return Ok(None);
+        }
+
+        self.dkg_phase = DkgPhases::Complain;
+
+        let mut msgs = Vec::new();
+        for ((sender_id, sender_idx), part) in self.acc_contribute.contributes.clone() {
+            match self.handle_part_or_fault(sec_key, sender_idx, &sender_id, part.clone()) {
+                Ok(Some(_row)) => {}
+                Ok(None) => {}
+                Err(_fault) => {
+                    let msg = DkgMessage::Contribution::<S::PublicId> {
+                        key_gen_id: sender_idx,
+                        part,
+                    };
+                    let invalid_contribute = serialisation::serialise(&msg)?;
+                    msgs.push(DkgMessage::Complain {
+                        key_gen_id: self.our_idx,
+                        target: sender_idx,
+                        msg: invalid_contribute,
+                    });
+                }
+            }
+        }
+
+        // In case of no complains, calling finalize_complain to jump to `Justification` state.
+        // FIXME: May still be needed to be in `Complain` state, as others may complain?
+        if msgs.is_empty() {
+            if let Ok(msg) = self.finalize_complain(sec_key, rng) {
+                msgs.push(msg);
             } else {
                 return Err(Error::Unknown);
-            };
+            }
+        }
+
+        Ok(Some(msgs))
+    }
+
+    // Handles a `Complain` message.
+    fn handle_complain(
+        &mut self,
+        sec_key: &S,
+        sender_idx: u64,
+        target_idx: u64,
+        invalid_msg: Vec<u8>,
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
+        if self.dkg_phase != DkgPhases::Complain {
+            return Err(Error::Unknown);
+        }
+
+        let sender_id = self
+            .node_id_from_index(sender_idx)
+            .ok_or(Error::UnknownSender)?;
+        let target_id = self.node_id_from_index(target_idx).ok_or(Error::Unknown)?;
+
+        self.acc_complain
+            .add_complain(sender_id, target_id, invalid_msg);
+        Ok(None)
+    }
+
+    // TODO: so far this function has to be called externally to indicates a completion of complain
+    //       phase. May need to be further verified whether there is a better approach.
+    // TODO: non-contributed member shall be complained as well.
+    pub fn finalize_complain(
+        &mut self,
+        sec_key: &S,
+        rng: &mut dyn rand::Rng,
+    ) -> Result<DkgMessage<S::PublicId>, Error> {
+        let failings = self.acc_complain.finalize_complain();
+        if !failings.is_empty() {
+            for failing in failings.iter() {
+                let _ = self.pub_keys.remove(failing);
+            }
+            self.our_idx = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
+        }
+
+        self.dkg_phase = DkgPhases::Justification;
+        self.parts = BTreeMap::new();
+
+        let mut rng = rng_adapter::RngAdapter(&mut *rng);
+        let our_part = BivarPoly::random(self.threshold, &mut rng);
+        let justify = our_part.commitment();
+        let encrypt = |(i, pk): (usize, &S::PublicId)| {
+            let row = our_part.row(i + 1);
+            sec_key
+                .encrypt(pk, &serialisation::serialise(&row)?)
+                .ok_or(Error::Encryption)
+        };
+        let rows = self
+            .pub_keys
+            .iter()
+            .enumerate()
+            .map(encrypt)
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(DkgMessage::Justification {
+            key_gen_id: self.our_idx,
+            part: Part(justify, rows),
+        })
+    }
+
+    // Handles a `Justification` message.
+    fn handle_justificate(
+        &mut self,
+        sec_key: &S,
+        sender_idx: u64,
+        part: Part,
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
+        if self.dkg_phase != DkgPhases::Justification {
+            return Err(Error::Unknown);
+        }
 
         let sender_id = self
             .node_id_from_index(sender_idx)
@@ -311,11 +548,8 @@ impl<S: SecretId> KeyGen<S> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(_fault) => {
-                let invalid_contribute = serialisation::serialise(&dkg_msg)?;
-                return Ok(Some(DkgMessage::Complain {
-                    key_gen_id: self.our_idx,
-                    msg: invalid_contribute,
-                }));
+                // FIXME: shall we return back to complain phase ?
+                return Ok(None);
             }
         };
         // The row is valid. Encrypt one value for each node and broadcast a `Commitment`.
@@ -326,26 +560,25 @@ impl<S: SecretId> KeyGen<S> {
             values.push(sec_key.encrypt(pk, ser_val).ok_or(Error::Encryption)?);
         }
         self.dkg_phase = DkgPhases::Commitment;
-        Ok(Some(DkgMessage::Commitment {
+        let mut result = Vec::new();
+        result.push(DkgMessage::Commitment {
             key_gen_id: self.our_idx,
             commit: Commit(sender_idx, values),
-        }))
+        });
+        Ok(Some(result))
     }
 
-    /// Handles a `Commit` message.
-    pub fn handle_commit(
+    // Handles a `Commit` message.
+    fn handle_commit(
         &mut self,
         sec_key: &S,
-        dkg_msg: DkgMessage<S::PublicId>,
+        sender_idx: u64,
+        commit: Commit,
     ) -> Result<CommitOutcome, Error> {
         if self.dkg_phase != DkgPhases::Commitment {
             return Err(Error::Unknown);
         }
-        let (sender_idx, commit) = if let DkgMessage::Commitment { key_gen_id, commit } = dkg_msg {
-            (key_gen_id, commit)
-        } else {
-            return Err(Error::Unknown);
-        };
+
         let sender_id = self
             .node_id_from_index(sender_idx)
             .ok_or(Error::UnknownSender)?;

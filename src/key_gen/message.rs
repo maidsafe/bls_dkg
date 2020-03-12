@@ -27,6 +27,7 @@ pub enum DkgMessage<P: PublicId> {
     },
     Complain {
         key_gen_id: u64,
+        target: u64,
         msg: Vec<u8>,
     },
     Justification {
