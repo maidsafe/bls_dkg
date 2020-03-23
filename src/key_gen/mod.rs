@@ -46,6 +46,9 @@ pub enum Error {
     /// Failed to serialize message.
     #[error(display = "Serialization error: {}", _0)]
     Serialization(String),
+    /// Network error from Quic-P2P.
+    #[error(display = "QuicP2P error: {}", _0)]
+    QuicP2P(String),
     /// Failed to encrypt message.
     #[error(display = "Encryption error")]
     Encryption,

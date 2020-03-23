@@ -7,21 +7,12 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-    html_favicon_url = "https://maidsafe.net/img/favicon.ico",
-    test(attr(forbid(warnings)))
-)]
+/// Signing and verification.
+pub mod signing {
+    pub use threshold_crypto::{PublicKey, SecretKey, Signature, SIG_SIZE};
+}
 
-#[cfg(test)]
-extern crate serde_derive;
-
-pub mod crypto;
-pub mod id;
-pub mod key_gen;
-pub mod member;
-
-pub use member::Member;
-
-#[cfg(test)]
-mod dev_utils;
+/// Encryption and decryption
+pub mod encryption {
+    pub use ed25519_dalek::{PublicKey, SecretKey};
+}
