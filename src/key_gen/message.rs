@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Commit, Part};
+use super::{Commitment, Part};
 use crate::id::PublicId;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -15,7 +15,7 @@ use std::fmt;
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DkgMessage<P: PublicId> {
-    Initial {
+    Initialization {
         key_gen_id: u64,
         m: usize,
         n: usize,
@@ -25,7 +25,7 @@ pub enum DkgMessage<P: PublicId> {
         key_gen_id: u64,
         part: Part,
     },
-    Complain {
+    Complaint {
         key_gen_id: u64,
         target: u64,
         msg: Vec<u8>,
@@ -36,21 +36,21 @@ pub enum DkgMessage<P: PublicId> {
     },
     Commitment {
         key_gen_id: u64,
-        commit: Commit,
+        commitment: Commitment,
     },
 }
 
 impl<P: PublicId> fmt::Debug for DkgMessage<P> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            DkgMessage::Initial { key_gen_id, .. } => {
-                write!(formatter, "DkgInitial({})", key_gen_id)
+            DkgMessage::Initialization { key_gen_id, .. } => {
+                write!(formatter, "DkgInitialization({})", key_gen_id)
             }
             DkgMessage::Contribution { key_gen_id, .. } => {
                 write!(formatter, "DkgContribution({})", key_gen_id)
             }
-            DkgMessage::Complain { key_gen_id, .. } => {
-                write!(formatter, "DkgComplain({})", key_gen_id)
+            DkgMessage::Complaint { key_gen_id, .. } => {
+                write!(formatter, "DkgComplaint({})", key_gen_id)
             }
             DkgMessage::Justification { key_gen_id, .. } => {
                 write!(formatter, "DkgJustification({})", key_gen_id)

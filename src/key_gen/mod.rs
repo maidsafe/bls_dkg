@@ -29,7 +29,7 @@ use threshold_crypto::{
 /// A local error while handling a message, that was not caused by that message being invalid.
 #[derive(Clone, Eq, PartialEq, Debug, Fail)]
 pub enum Error {
-    /// Unknown key set.
+    /// Unknown error.
     #[fail(display = "Unknown")]
     Unknown,
     /// Unknown sender.
@@ -69,11 +69,11 @@ impl Debug for Part {
 /// The message is only produced after we verified our row against the commitment in the `Part`.
 /// For each node, it contains one encrypted value of that row.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Commit(u64, Vec<Vec<u8>>);
+pub struct Commitment(u64, Vec<Vec<u8>>);
 
-impl Debug for Commit {
+impl Debug for Commitment {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Commit")
+        f.debug_tuple("Commitment")
             .field(&self.0)
             .field(&format!("<{} values>", self.1.len()))
             .finish()
@@ -84,37 +84,40 @@ impl Debug for Commit {
 #[derive(Debug, PartialEq, Eq)]
 struct ProposalState {
     /// The proposer's commitment.
-    commit: BivarCommitment,
-    /// The verified values we received from `Commit` messages.
+    commitment: BivarCommitment,
+    /// The verified values we received from `Commitment` messages.
     values: BTreeMap<u64, Fr>,
-    /// The nodes which have commited.
-    commits: BTreeSet<u64>,
+    /// The nodes which have committed.
+    commitments: BTreeSet<u64>,
 }
 
 impl ProposalState {
     /// Creates a new part state with a commitment.
-    fn new(commit: BivarCommitment) -> ProposalState {
+    fn new(commitment: BivarCommitment) -> ProposalState {
         ProposalState {
-            commit,
+            commitment,
             values: BTreeMap::new(),
-            commits: BTreeSet::new(),
+            commitments: BTreeSet::new(),
         }
     }
 
-    /// Returns `true` if at least `2 * threshold + 1` nodes have commited.
+    /// Returns `true` if at least `2 * threshold + 1` nodes have committed.
     fn is_complete(&self, threshold: usize) -> bool {
-        self.commits.len() > 2 * threshold
+        self.commitments.len() > 2 * threshold
     }
 }
 
 impl<'a> serde::Deserialize<'a> for ProposalState {
     fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        let (commit, values, commits) = serde::Deserialize::deserialize(deserializer)?;
+        let (commitment, values, commitments) = serde::Deserialize::deserialize(deserializer)?;
         let values: Vec<(u64, FieldWrap<Fr>)> = values;
         Ok(Self {
-            commit,
-            values: values.into_iter().map(|(idx, fr)| (idx, fr.0)).collect(),
-            commits,
+            commitment,
+            values: values
+                .into_iter()
+                .map(|(index, fr)| (index, fr.0))
+                .collect(),
+            commitments,
         })
     }
 }
@@ -122,46 +125,46 @@ impl<'a> serde::Deserialize<'a> for ProposalState {
 /// The outcome of handling and verifying a `Part` message.
 pub enum PartOutcome {
     /// The message was valid: the part of it that was encrypted to us matched the public
-    /// commitment, so we can multicast an `Commit` message for it. If we have already handled the
+    /// commitment, so we can multicast an `Commitment` message for it. If we have already handled the
     /// same `Part` before, this contains `None` instead.
-    Valid(Option<Commit>),
+    Valid(Option<Commitment>),
     /// The message was invalid: We now know that the proposer is faulty.
     Invalid(PartFault),
 }
 
-/// The outcome of handling and verifying a `Commit` message.
-pub enum CommitOutcome {
+/// The outcome of handling and verifying a `Commitment` message.
+pub enum CommitmentOutcome {
     /// The message was valid.
     Valid,
     /// The message was invalid: The sender is faulty.
-    Invalid(CommitFault),
+    Invalid(CommitmentFault),
 }
 
 #[derive(Deserialize, PartialEq)]
 pub enum DkgPhases {
-    Initial,
-    Contribute,
-    Complain,
+    Initialization,
+    Contribution,
+    Complaining,
     Justification,
     Commitment,
-    Finalize,
+    Finalization,
 }
 
 #[derive(Default)]
-struct AccumulateInitial<P: PublicId> {
+struct InitializationAccumulator<P: PublicId> {
     senders: BTreeSet<u64>,
-    received_initializes: BTreeMap<(usize, usize, BTreeSet<P>), usize>,
+    initializations: BTreeMap<(usize, usize, BTreeSet<P>), usize>,
 }
 
-impl<P: PublicId> AccumulateInitial<P> {
-    fn new() -> AccumulateInitial<P> {
-        AccumulateInitial {
+impl<P: PublicId> InitializationAccumulator<P> {
+    fn new() -> InitializationAccumulator<P> {
+        InitializationAccumulator {
             senders: BTreeSet::new(),
-            received_initializes: BTreeMap::new(),
+            initializations: BTreeMap::new(),
         }
     }
 
-    fn add_initial(
+    fn add_initialization(
         &mut self,
         m: usize,
         n: usize,
@@ -173,65 +176,65 @@ impl<P: PublicId> AccumulateInitial<P> {
         }
 
         let paras = (m, n, member_list);
-        if let Some(value) = self.received_initializes.get_mut(&paras) {
+        if let Some(value) = self.initializations.get_mut(&paras) {
             *value += 1;
             if *value > (2 * m + 1) {
                 return Some(paras);
             }
         } else {
-            let _ = self.received_initializes.insert(paras, 1);
+            let _ = self.initializations.insert(paras, 1);
         }
         None
     }
 }
 
 #[derive(Default)]
-struct AccumulateContribute<P: PublicId> {
+struct ContributionAccumulator<P: PublicId> {
     pub_keys: BTreeSet<P>,
-    // Indexed by (id, idx), value is the `part`.
-    contributes: BTreeMap<(P, u64), Part>,
+    // Indexed by (id, index), value is the `part`.
+    contributions: BTreeMap<(P, u64), Part>,
 }
 
-impl<P: PublicId> AccumulateContribute<P> {
-    fn new(pub_keys: BTreeSet<P>) -> AccumulateContribute<P> {
-        AccumulateContribute {
+impl<P: PublicId> ContributionAccumulator<P> {
+    fn new(pub_keys: BTreeSet<P>) -> ContributionAccumulator<P> {
+        ContributionAccumulator {
             pub_keys,
-            contributes: BTreeMap::new(),
+            contributions: BTreeMap::new(),
         }
     }
 
-    // returns `true` when received contributes from all expected senders.
-    fn add_contribute(&mut self, sender_id: P, sender_idx: u64, part: Part) -> bool {
+    // returns `true` when received contributions from all expected senders.
+    fn add_contribution(&mut self, sender_id: P, sender_index: u64, part: Part) -> bool {
         if !self.pub_keys.contains(&sender_id) {
             return false;
         }
-        let _ = self.contributes.insert((sender_id, sender_idx), part);
-        self.contributes.len() == self.pub_keys.len()
+        let _ = self.contributions.insert((sender_id, sender_index), part);
+        self.contributions.len() == self.pub_keys.len()
     }
 }
 
 #[derive(Default)]
-struct AccumulateComplain<P: PublicId> {
+struct ComplaintsAccumulator<P: PublicId> {
     pub_keys: BTreeSet<P>,
     // Indexed by complaining targets.
-    complains: BTreeMap<P, BTreeSet<P>>,
+    complaints: BTreeMap<P, BTreeSet<P>>,
 }
 
-impl<P: PublicId> AccumulateComplain<P> {
-    fn new(pub_keys: BTreeSet<P>) -> AccumulateComplain<P> {
-        AccumulateComplain {
+impl<P: PublicId> ComplaintsAccumulator<P> {
+    fn new(pub_keys: BTreeSet<P>) -> ComplaintsAccumulator<P> {
+        ComplaintsAccumulator {
             pub_keys,
-            complains: BTreeMap::new(),
+            complaints: BTreeMap::new(),
         }
     }
 
     // TODO: accusation shall be validated.
-    fn add_complain(&mut self, sender_id: P, target_id: P, _msg: Vec<u8>) {
+    fn add_complaint(&mut self, sender_id: P, target_id: P, _msg: Vec<u8>) {
         if !self.pub_keys.contains(&sender_id) || !self.pub_keys.contains(&target_id) {
             return;
         }
 
-        match self.complains.entry(target_id.clone()) {
+        match self.complaints.entry(target_id.clone()) {
             Entry::Occupied(mut entry) => {
                 let _ = entry.get_mut().insert(sender_id);
             }
@@ -243,29 +246,31 @@ impl<P: PublicId> AccumulateComplain<P> {
         }
     }
 
-    fn finalize_complain(&self) -> BTreeSet<P> {
-        let mut failings = BTreeSet::new();
+    // note: there is nothing in this signature that lets us know
+    // what the returned peers are and why they are returned.
+    fn finalize_complaining_phase(&self) -> BTreeSet<P> {
+        let mut invalid_peers = BTreeSet::new();
 
-        // Counting for how many times a member missed complaining against others validly.
+        // Counts for how many times a member missed complaining against others validly.
         // If missed too many times, such member shall be considered as invalid directly.
-        let mut counting: BTreeMap<P, usize> = BTreeMap::new();
+        let mut counts: BTreeMap<P, usize> = BTreeMap::new();
 
-        for (target_id, accusers) in self.complains.iter() {
+        for (target_id, accusers) in self.complaints.iter() {
             if accusers.len() * 3 > self.pub_keys.len() * 2 {
-                let _ = failings.insert(target_id.clone());
+                let _ = invalid_peers.insert(target_id.clone());
                 for peer in self.pub_keys.iter() {
                     if !accusers.contains(peer) {
-                        *counting.entry(peer.clone()).or_insert(0usize) += 1;
+                        *counts.entry(peer.clone()).or_insert(0usize) += 1;
                     }
                 }
             }
         }
-        for (peer, times) in counting {
+        for (peer, times) in counts {
             if times > self.pub_keys.len() / 2 {
-                let _ = failings.insert(peer);
+                let _ = invalid_peers.insert(peer);
             }
         }
-        failings
+        invalid_peers
     }
 }
 
@@ -279,7 +284,7 @@ impl<P: PublicId> AccumulateComplain<P> {
 ///   b, multicasting the return `DkgMessage` to all participants.
 ///   c, call `handle_message` function to handle the incoming `DkgMessage` and multicasting the
 ///      resulted `DkgMessage` (if has) to all participants.
-///   d, call `finalize_complain` to complete the complain phase. (This separate call may need to
+///   d, call `finalize_complaining_phase` to complete the complaining phase. (This separate call may need to
 ///      depend on a separate timer & checker against the key generator's current status)
 ///   e, repeat step c when there is incoming `DkgMessage`.
 ///   f, call `generate` to get the public-key set and secret-key share, if the procedure finalized.
@@ -287,7 +292,7 @@ pub struct KeyGen<S: SecretId> {
     /// Our node ID.
     our_id: S::PublicId,
     /// Our node index.
-    our_idx: u64,
+    our_index: u64,
     /// The public keys of all nodes, by node ID.
     pub_keys: BTreeSet<S::PublicId>,
     /// Proposed bivariate polynomials.
@@ -297,11 +302,11 @@ pub struct KeyGen<S: SecretId> {
     /// Current DKG phase.
     dkg_phase: DkgPhases,
     /// Accumulates initializations.
-    acc_initial: AccumulateInitial<S::PublicId>,
-    /// Accumulates contributes.
-    acc_contribute: AccumulateContribute<S::PublicId>,
-    /// Accumulates Complains.
-    acc_complain: AccumulateComplain<S::PublicId>,
+    initalization_accumulator: InitializationAccumulator<S::PublicId>,
+    /// Accumulates contributions.
+    contribution_accumulator: ContributionAccumulator<S::PublicId>,
+    /// Accumulates complaints.
+    complaints_accumulator: ComplaintsAccumulator<S::PublicId>,
 }
 
 impl<S: SecretId> KeyGen<S> {
@@ -313,28 +318,28 @@ impl<S: SecretId> KeyGen<S> {
         pub_keys: BTreeSet<S::PublicId>,
     ) -> Result<(KeyGen<S>, DkgMessage<S::PublicId>), Error> {
         let our_id = sec_key.public_id().clone();
-        let our_idx = if let Some(idx) = pub_keys.iter().position(|id| *id == our_id) {
-            idx as u64
+        let our_index = if let Some(index) = pub_keys.iter().position(|id| *id == our_id) {
+            index as u64
         } else {
             return Err(Error::Unknown);
         };
 
         let key_gen = KeyGen::<S> {
             our_id,
-            our_idx,
+            our_index,
             pub_keys: pub_keys.clone(),
             parts: BTreeMap::new(),
             threshold,
-            dkg_phase: DkgPhases::Initial,
-            acc_initial: AccumulateInitial::new(),
-            acc_contribute: AccumulateContribute::new(pub_keys.clone()),
-            acc_complain: AccumulateComplain::new(pub_keys.clone()),
+            dkg_phase: DkgPhases::Initialization,
+            initalization_accumulator: InitializationAccumulator::new(),
+            contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
+            complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone()),
         };
 
         Ok((
             key_gen,
-            DkgMessage::Initial {
-                key_gen_id: our_idx,
+            DkgMessage::Initialization {
+                key_gen_id: our_index,
                 m: threshold,
                 n: pub_keys.len(),
                 member_list: pub_keys,
@@ -350,26 +355,28 @@ impl<S: SecretId> KeyGen<S> {
         dkg_msg: DkgMessage<S::PublicId>,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         match dkg_msg {
-            DkgMessage::Initial {
+            DkgMessage::Initialization {
                 key_gen_id,
                 m,
                 n,
                 member_list,
-            } => self.handle_initialize(sec_key, rng, m, n, key_gen_id, member_list),
-
+            } => self.handle_initialization(sec_key, rng, m, n, key_gen_id, member_list),
             DkgMessage::Contribution { key_gen_id, part } => {
-                self.handle_contribute(sec_key, rng, key_gen_id, part)
+                self.handle_contribution(sec_key, rng, key_gen_id, part)
             }
-            DkgMessage::Complain {
+            DkgMessage::Complaint {
                 key_gen_id,
                 target,
                 msg,
-            } => self.handle_complain(sec_key, key_gen_id, target, msg),
+            } => self.handle_complaint(sec_key, key_gen_id, target, msg),
             DkgMessage::Justification { key_gen_id, part } => {
-                self.handle_justificate(sec_key, key_gen_id, part)
+                self.handle_justification(sec_key, key_gen_id, part)
             }
-            DkgMessage::Commitment { key_gen_id, commit } => {
-                if let Err(err) = self.handle_commit(sec_key, key_gen_id, commit) {
+            DkgMessage::Commitment {
+                key_gen_id,
+                commitment,
+            } => {
+                if let Err(err) = self.handle_commitment(sec_key, key_gen_id, commitment) {
                     Err(err)
                 } else {
                     Ok(None)
@@ -378,9 +385,9 @@ impl<S: SecretId> KeyGen<S> {
         }
     }
 
-    // Handles an incoming initialize message. Creates the `Contribute` message once quorumn
+    // Handles an incoming initialize message. Creates the `Contribution` message once quorumn
     // agreement reached, and the message should be multicast to all nodes.
-    fn handle_initialize(
+    fn handle_initialization(
         &mut self,
         sec_key: &S,
         rng: &mut dyn rand::Rng,
@@ -389,17 +396,20 @@ impl<S: SecretId> KeyGen<S> {
         sender: u64,
         member_list: BTreeSet<S::PublicId>,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Initial {
+        if self.dkg_phase != DkgPhases::Initialization {
             return Err(Error::Unknown);
         }
-        if let Some((m, n, member_list)) = self.acc_initial.add_initial(m, n, sender, member_list) {
+        if let Some((m, n, member_list)) =
+            self.initalization_accumulator
+                .add_initialization(m, n, sender, member_list)
+        {
             self.threshold = m;
             self.pub_keys = member_list;
-            self.dkg_phase = DkgPhases::Contribute;
+            self.dkg_phase = DkgPhases::Contribution;
 
             let mut rng = rng_adapter::RngAdapter(&mut *rng);
             let our_part = BivarPoly::random(self.threshold, &mut rng);
-            let commit = our_part.commitment();
+            let commitment = our_part.commitment();
             let encrypt = |(i, pk): (usize, &S::PublicId)| {
                 let row = our_part.row(i + 1);
                 sec_key
@@ -415,65 +425,66 @@ impl<S: SecretId> KeyGen<S> {
 
             let mut result = Vec::new();
             result.push(DkgMessage::Contribution {
-                key_gen_id: self.our_idx,
-                part: Part(commit, rows),
+                key_gen_id: self.our_index,
+                part: Part(commitment, rows),
             });
             return Ok(Some(result));
         }
         Ok(None)
     }
 
-    // Handles a `Contribute` message.
-    // If it is invalid, sends a `Complain` message targeting the sender to be broadcast.
-    // If all contributed, retuns a `Commitment` message to be broadcast.
-    fn handle_contribute(
+    // Handles a `Contribution` message.
+    // If it is invalid, sends a `Complaint` message targeting the sender to be broadcast.
+    // If all contributed, returns a `Commitment` message to be broadcast.
+    fn handle_contribution(
         &mut self,
         sec_key: &S,
         rng: &mut dyn rand::Rng,
-        sender_idx: u64,
+        sender_index: u64,
         part: Part,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Contribute {
+        if self.dkg_phase != DkgPhases::Contribution {
             return Err(Error::Unknown);
         }
 
         let sender_id = self
-            .node_id_from_index(sender_idx)
+            .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
 
         if !self
-            .acc_contribute
-            .add_contribute(sender_id, sender_idx, part)
+            .contribution_accumulator
+            .add_contribution(sender_id, sender_index, part)
         {
             return Ok(None);
         }
 
-        self.dkg_phase = DkgPhases::Complain;
+        self.dkg_phase = DkgPhases::Complaining;
 
         let mut msgs = Vec::new();
-        for ((sender_id, sender_idx), part) in self.acc_contribute.contributes.clone() {
-            match self.handle_part_or_fault(sec_key, sender_idx, &sender_id, part.clone()) {
+        for ((sender_id, sender_index), part) in self.contribution_accumulator.contributions.clone()
+        {
+            match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part.clone()) {
                 Ok(Some(_row)) => {}
                 Ok(None) => {}
                 Err(_fault) => {
                     let msg = DkgMessage::Contribution::<S::PublicId> {
-                        key_gen_id: sender_idx,
+                        key_gen_id: sender_index,
                         part,
                     };
                     let invalid_contribute = serialisation::serialise(&msg)?;
-                    msgs.push(DkgMessage::Complain {
-                        key_gen_id: self.our_idx,
-                        target: sender_idx,
+                    msgs.push(DkgMessage::Complaint {
+                        key_gen_id: self.our_index,
+                        target: sender_index,
                         msg: invalid_contribute,
                     });
                 }
             }
         }
 
-        // In case of no complains, calling finalize_complain to jump to `Justification` state.
-        // FIXME: May still be needed to be in `Complain` state, as others may complain?
+        // In case of no complaints, calling finalize_complaining_phase to jump to `Justification` phase.
+        // FIXME: May still be needed to be in `Complaining` phase, as others may complain?
         if msgs.is_empty() {
-            if let Ok(msg) = self.finalize_complain(sec_key, rng) {
+            if let Ok(msg) = self.finalize_complaining_phase(sec_key, rng) {
                 msgs.push(msg);
             } else {
                 return Err(Error::Unknown);
@@ -483,41 +494,43 @@ impl<S: SecretId> KeyGen<S> {
         Ok(Some(msgs))
     }
 
-    // Handles a `Complain` message.
-    fn handle_complain(
+    // Handles a `Complaint` message.
+    fn handle_complaint(
         &mut self,
         sec_key: &S,
-        sender_idx: u64,
-        target_idx: u64,
+        sender_index: u64,
+        target_index: u64,
         invalid_msg: Vec<u8>,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Complain {
+        if self.dkg_phase != DkgPhases::Complaining {
             return Err(Error::Unknown);
         }
 
         let sender_id = self
-            .node_id_from_index(sender_idx)
+            .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
-        let target_id = self.node_id_from_index(target_idx).ok_or(Error::Unknown)?;
+        let target_id = self
+            .node_id_from_index(target_index)
+            .ok_or(Error::Unknown)?;
 
-        self.acc_complain
-            .add_complain(sender_id, target_id, invalid_msg);
+        self.complaints_accumulator
+            .add_complaint(sender_id, target_id, invalid_msg);
         Ok(None)
     }
 
     // TODO: so far this function has to be called externally to indicates a completion of complain
     //       phase. May need to be further verified whether there is a better approach.
-    pub fn finalize_complain(
+    pub fn finalize_complaining_phase(
         &mut self,
         sec_key: &S,
         rng: &mut dyn rand::Rng,
     ) -> Result<DkgMessage<S::PublicId>, Error> {
-        let failings = self.acc_complain.finalize_complain();
+        let failings = self.complaints_accumulator.finalize_complaining_phase();
         if !failings.is_empty() {
             for failing in failings.iter() {
                 let _ = self.pub_keys.remove(failing);
             }
-            self.our_idx = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
+            self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
         }
 
         self.dkg_phase = DkgPhases::Justification;
@@ -539,16 +552,16 @@ impl<S: SecretId> KeyGen<S> {
             .map(encrypt)
             .collect::<Result<Vec<_>, Error>>()?;
         Ok(DkgMessage::Justification {
-            key_gen_id: self.our_idx,
+            key_gen_id: self.our_index,
             part: Part(justify, rows),
         })
     }
 
     // Handles a `Justification` message.
-    fn handle_justificate(
+    fn handle_justification(
         &mut self,
         sec_key: &S,
-        sender_idx: u64,
+        sender_index: u64,
         part: Part,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         if self.dkg_phase != DkgPhases::Justification {
@@ -556,9 +569,9 @@ impl<S: SecretId> KeyGen<S> {
         }
 
         let sender_id = self
-            .node_id_from_index(sender_idx)
+            .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
-        let row = match self.handle_part_or_fault(sec_key, sender_idx, &sender_id, part) {
+        let row = match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part) {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(_fault) => {
@@ -568,44 +581,44 @@ impl<S: SecretId> KeyGen<S> {
         };
         // The row is valid. Encrypt one value for each node and broadcast a `Commitment`.
         let mut values = Vec::new();
-        for (idx, pk) in self.pub_keys.iter().enumerate() {
-            let val = row.evaluate(idx + 1);
+        for (index, pk) in self.pub_keys.iter().enumerate() {
+            let val = row.evaluate(index + 1);
             let ser_val = serialisation::serialise(&FieldWrap(val))?;
             values.push(sec_key.encrypt(pk, ser_val).ok_or(Error::Encryption)?);
         }
         self.dkg_phase = DkgPhases::Commitment;
         let mut result = Vec::new();
         result.push(DkgMessage::Commitment {
-            key_gen_id: self.our_idx,
-            commit: Commit(sender_idx, values),
+            key_gen_id: self.our_index,
+            commitment: Commitment(sender_index, values),
         });
         Ok(Some(result))
     }
 
-    // Handles a `Commit` message.
-    fn handle_commit(
+    // Handles a `Commitment` message.
+    fn handle_commitment(
         &mut self,
         sec_key: &S,
-        sender_idx: u64,
-        commit: Commit,
-    ) -> Result<CommitOutcome, Error> {
+        sender_index: u64,
+        commitment: Commitment,
+    ) -> Result<CommitmentOutcome, Error> {
         if self.dkg_phase != DkgPhases::Commitment {
             return Err(Error::Unknown);
         }
 
         let sender_id = self
-            .node_id_from_index(sender_idx)
+            .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
 
         Ok(
-            match self.handle_commit_or_fault(sec_key, &sender_id, sender_idx, commit) {
+            match self.handle_commitment_or_fault(sec_key, &sender_id, sender_index, commitment) {
                 Ok(()) => {
                     if self.is_ready() {
-                        self.dkg_phase = DkgPhases::Finalize;
+                        self.dkg_phase = DkgPhases::Finalization;
                     }
-                    CommitOutcome::Valid
+                    CommitmentOutcome::Valid
                 }
-                Err(fault) => CommitOutcome::Invalid(fault),
+                Err(fault) => CommitmentOutcome::Invalid(fault),
             },
         )
     }
@@ -615,13 +628,13 @@ impl<S: SecretId> KeyGen<S> {
         self.pub_keys
             .iter()
             .position(|id| id == node_id)
-            .map(|idx| idx as u64)
+            .map(|index| index as u64)
     }
 
     /// Returns the id of the index, or `None` if it is unknown.
-    fn node_id_from_index(&self, node_idx: u64) -> Option<S::PublicId> {
+    fn node_id_from_index(&self, node_index: u64) -> Option<S::PublicId> {
         for (i, pk) in self.pub_keys.iter().enumerate() {
-            if i == node_idx as usize {
+            if i == node_index as usize {
                 return Some(pk.clone());
             }
         }
@@ -630,7 +643,7 @@ impl<S: SecretId> KeyGen<S> {
 
     /// Returns the number of complete parts. If this is at least `threshold + 1`, the keys can
     /// be generated, but it is possible to wait for more to increase security.
-    fn count_complete(&self) -> usize {
+    fn complete_parts_count(&self) -> usize {
         self.parts
             .values()
             .filter(|part| part.is_complete(self.threshold))
@@ -639,89 +652,94 @@ impl<S: SecretId> KeyGen<S> {
 
     /// Returns `true` if enough parts are complete to safely generate the new key.
     fn is_ready(&self) -> bool {
-        self.count_complete() > self.threshold
+        self.complete_parts_count() > self.threshold
     }
 
     /// Returns the new secret key share and the public key set.
-    pub fn generate(&self) -> Result<(BTreeSet<S::PublicId>, DkgResult), Error> {
-        if self.dkg_phase != DkgPhases::Finalize {
+    pub fn generate_keys(&self) -> Result<(BTreeSet<S::PublicId>, DkgResult), Error> {
+        if self.dkg_phase != DkgPhases::Finalization {
             return Err(Error::Unknown);
         }
 
-        let mut pk_commit = Poly::zero().commitment();
+        let mut pk_commitment = Poly::zero().commitment();
         let mut sk_val = Fr::zero();
         let is_complete = |part: &&ProposalState| part.is_complete(self.threshold);
         for part in self.parts.values().filter(is_complete) {
-            pk_commit += part.commit.row(0);
+            pk_commitment += part.commitment.row(0);
             let row = Poly::interpolate(part.values.iter().take(self.threshold + 1));
             sk_val.add_assign(&row.evaluate(0));
         }
         let sk = SecretKeyShare::from_mut(&mut sk_val);
-        Ok((self.pub_keys.clone(), DkgResult::new(pk_commit.into(), sk)))
+        Ok((
+            self.pub_keys.clone(),
+            DkgResult::new(pk_commitment.into(), sk),
+        ))
     }
 
     /// Handles a `Part`, returns a `PartFault` if it is invalid.
     fn handle_part_or_fault(
         &mut self,
         sec_key: &S,
-        sender_idx: u64,
+        sender_index: u64,
         sender_id: &S::PublicId,
-        Part(commit, rows): Part,
+        Part(commitment, rows): Part,
     ) -> Result<Option<Poly>, PartFault> {
         if rows.len() != self.pub_keys.len() {
             return Err(PartFault::RowCount);
         }
-        if let Some(state) = self.parts.get(&sender_idx) {
-            if state.commit != commit {
+        if let Some(state) = self.parts.get(&sender_index) {
+            if state.commitment != commitment {
                 return Err(PartFault::MultipleParts);
             }
             return Ok(None); // We already handled this `Part` before.
         }
-        let commit_row = commit.row(self.our_idx + 1);
+        let commitment_row = commitment.row(self.our_index + 1);
         // Retrieve our own row's commitment, and store the full commitment.
-        let _ = self.parts.insert(sender_idx, ProposalState::new(commit));
+        let _ = self
+            .parts
+            .insert(sender_index, ProposalState::new(commitment));
         // We are a validator: Decrypt and deserialize our row and compare it to the commitment.
         let ser_row = sec_key
-            .decrypt(sender_id, &rows[self.our_idx as usize])
+            .decrypt(sender_id, &rows[self.our_index as usize])
             .ok_or(PartFault::DecryptRow)?;
         let row: Poly =
             serialisation::deserialise(&ser_row).map_err(|_| PartFault::DeserializeRow)?;
-        if row.commitment() != commit_row {
+        if row.commitment() != commitment_row {
             return Err(PartFault::RowCommitment);
         }
         Ok(Some(row))
     }
 
-    /// Handles a `Commit` message.
-    fn handle_commit_or_fault(
+    /// Handles a `Commitment` message.
+    fn handle_commitment_or_fault(
         &mut self,
         sec_key: &S,
         sender_id: &S::PublicId,
-        sender_idx: u64,
-        Commit(proposer_idx, values): Commit,
-    ) -> Result<(), CommitFault> {
+        sender_index: u64,
+        Commitment(proposer_index, values): Commitment,
+    ) -> Result<(), CommitmentFault> {
         if values.len() != self.pub_keys.len() {
-            return Err(CommitFault::ValueCount);
+            return Err(CommitmentFault::ValueCount);
         }
         let part = self
             .parts
-            .get_mut(&proposer_idx)
-            .ok_or(CommitFault::MissingPart)?;
-        if !part.commits.insert(sender_idx) {
-            return Ok(()); // We already handled this `Commit` before.
+            .get_mut(&proposer_index)
+            .ok_or(CommitmentFault::MissingPart)?;
+        if !part.commitments.insert(sender_index) {
+            return Ok(()); // We already handled this `Commitment` before.
         }
-        let our_idx = self.our_idx;
+        let our_index = self.our_index;
         // We are a validator: Decrypt and deserialize our value and compare it to the commitment.
         let ser_val = sec_key
-            .decrypt(sender_id, &values[our_idx as usize])
-            .ok_or(CommitFault::DecryptValue)?;
+            .decrypt(sender_id, &values[our_index as usize])
+            .ok_or(CommitmentFault::DecryptValue)?;
         let val = serialisation::deserialise::<FieldWrap<Fr>>(&ser_val)
-            .map_err(|_| CommitFault::DeserializeValue)?
+            .map_err(|_| CommitmentFault::DeserializeValue)?
             .into_inner();
-        if part.commit.evaluate(our_idx + 1, sender_idx + 1) != G1Affine::one().mul(val) {
-            return Err(CommitFault::ValueCommitment);
+        if part.commitment.evaluate(our_index + 1, sender_index + 1) != G1Affine::one().mul(val) {
+            return Err(CommitmentFault::ValueCommitment);
         }
-        let _ = part.values.insert(sender_idx + 1, val);
+        let _ = part.values.insert(sender_index + 1, val);
         Ok(())
     }
 }
@@ -732,15 +750,15 @@ impl<S: SecretId> Debug for KeyGen<S> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "KeyGen{{our_id:{:?}, our_idx:{:?}, pub_keys :{:?}, parts:{:?}, threshold:{:?}}}",
-            self.our_id, self.our_idx, self.pub_keys, self.parts, self.threshold
+            "KeyGen{{our_id:{:?}, our_index:{:?}, pub_keys :{:?}, parts:{:?}, threshold:{:?}}}",
+            self.our_id, self.our_index, self.pub_keys, self.parts, self.threshold
         )
     }
 }
 
-/// `Commit` faulty entries.
+/// `Commitment` faulty entries.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Fail, Serialize, Deserialize, PartialOrd, Ord)]
-pub enum CommitFault {
+pub enum CommitmentFault {
     /// The number of values differs from the number of nodes.
     #[fail(display = "The number of values differs from the number of nodes")]
     ValueCount,
