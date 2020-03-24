@@ -245,9 +245,24 @@ impl<P: PublicId> AccumulateComplain<P> {
 
     fn finalize_complain(&self) -> BTreeSet<P> {
         let mut failings = BTreeSet::new();
+
+        // Counting for how many times a member missed complaining against others validly.
+        // If missed too many times, such member shall be considered as invalid directly.
+        let mut counting: BTreeMap<P, usize> = BTreeMap::new();
+
         for (target_id, accusers) in self.complains.iter() {
             if accusers.len() * 3 > self.pub_keys.len() * 2 {
                 let _ = failings.insert(target_id.clone());
+                for peer in self.pub_keys.iter() {
+                    if !accusers.contains(peer) {
+                        *counting.entry(peer.clone()).or_insert(0usize) += 1;
+                    }
+                }
+            }
+        }
+        for (peer, times) in counting {
+            if times > self.pub_keys.len() / 2 {
+                let _ = failings.insert(peer);
             }
         }
         failings
@@ -492,7 +507,6 @@ impl<S: SecretId> KeyGen<S> {
 
     // TODO: so far this function has to be called externally to indicates a completion of complain
     //       phase. May need to be further verified whether there is a better approach.
-    // TODO: non-contributed member shall be complained as well.
     pub fn finalize_complain(
         &mut self,
         sec_key: &S,

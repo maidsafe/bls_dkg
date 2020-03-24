@@ -2,7 +2,7 @@
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "Implementation of a DKG"
 documentation = ""
-edition = "2020"
+edition = "2018"
 exclude = [""]
 homepage = "https://maidsafe.net"
 license = "GPL-3.0"
