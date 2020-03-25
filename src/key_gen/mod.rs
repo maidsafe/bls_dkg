@@ -246,8 +246,8 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
         }
     }
 
-    // note: there is nothing in this signature that lets us know
-    // what the returned peers are and why they are returned.
+    // Returns the invalid peers that quorumn members complained against, together with the
+    // non-contributors. Both shall be considered as invalid participants.
     fn finalize_complaining_phase(&self) -> BTreeSet<P> {
         let mut invalid_peers = BTreeSet::new();
 
@@ -481,8 +481,8 @@ impl<S: SecretId> KeyGen<S> {
             }
         }
 
-        // In case of no complaints, calling finalize_complaining_phase to jump to `Justification` phase.
-        // FIXME: May still be needed to be in `Complaining` phase, as others may complain?
+        // In case of no complaints, calling finalize_complaining_phase to transit into
+        // `Justification` phase.
         if msgs.is_empty() {
             if let Ok(msg) = self.finalize_complaining_phase(sec_key, rng) {
                 msgs.push(msg);
@@ -575,7 +575,8 @@ impl<S: SecretId> KeyGen<S> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(_fault) => {
-                // FIXME: shall we return back to complain phase ?
+                // In case of a failure, the sender shall be removed directly.
+                let _ = self.pub_keys.remove(&sender_id);
                 return Ok(None);
             }
         };
