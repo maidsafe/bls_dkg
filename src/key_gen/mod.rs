@@ -101,9 +101,8 @@ impl ProposalState {
         }
     }
 
-    /// Returns `true` if at least `2 * threshold + 1` nodes have committed.
     fn is_complete(&self, threshold: usize) -> bool {
-        self.commitments.len() > 2 * threshold
+        self.commitments.len() > threshold
     }
 }
 
@@ -140,7 +139,7 @@ pub enum CommitmentOutcome {
     Invalid(CommitmentFault),
 }
 
-#[derive(Deserialize, PartialEq)]
+#[derive(Deserialize, PartialEq, Debug)]
 pub enum DkgPhases {
     Initialization,
     Contribution,
@@ -587,12 +586,17 @@ impl<S: SecretId> KeyGen<S> {
             let ser_val = serialisation::serialise(&FieldWrap(val))?;
             values.push(sec_key.encrypt(pk, ser_val).ok_or(Error::Encryption)?);
         }
-        self.dkg_phase = DkgPhases::Commitment;
+
         let mut result = Vec::new();
         result.push(DkgMessage::Commitment {
             key_gen_id: self.our_index,
             commitment: Commitment(sender_index, values),
         });
+
+        if self.parts.len() == self.pub_keys.len() {
+            self.dkg_phase = DkgPhases::Commitment;
+        }
+
         Ok(Some(result))
     }
 
@@ -749,11 +753,7 @@ impl<S: SecretId> KeyGen<S> {
 // Cannot derive Debug without changing the type parameter
 impl<S: SecretId> Debug for KeyGen<S> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "KeyGen{{our_id:{:?}, our_index:{:?}, pub_keys :{:?}, parts:{:?}, threshold:{:?}}}",
-            self.our_id, self.our_index, self.pub_keys, self.parts, self.threshold
-        )
+        write!(formatter, "KeyGen{{{:?}}}", self.our_id)
     }
 }
 
@@ -795,4 +795,126 @@ pub enum PartFault {
     /// Row does not match the commitment.
     #[fail(display = "Row does not match the commitment")]
     RowCommitment,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use maidsafe_utilities::{serialisation::serialise, SeededRng};
+    use rand::Rng;
+
+    use crate::dev_utils::{create_ids, new_common_rng, PeerId, RngChoice};
+
+    // Alter the seed here to reproduce failures
+    static SEED: RngChoice = RngChoice::SeededRandom;
+
+    #[test]
+    fn test_key_gen_with() {
+        let threshold: usize = 5;
+        let node_num: usize = 7;
+        let mut rng = new_common_rng(SEED);
+
+        // Generate individual ids and key pairs.
+        let peer_ids: Vec<PeerId> = create_ids(node_num);
+        let pub_keys: BTreeSet<PeerId> = peer_ids.iter().cloned().collect();
+
+        // Create the `KeyGen` instances (starts from the Complaining phase) and initial proposals
+        // (calling `finalize_complaining_phase` to trigger the key_gen instance transit into
+        //  Justification phase and send out the initial proposal).
+        let mut generators = Vec::new();
+        let mut proposals = Vec::new();
+        peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
+            let mut key_gen = KeyGen::<PeerId> {
+                our_id: peer_id.public_id().clone(),
+                our_index: index as u64,
+                pub_keys: pub_keys.clone(),
+                parts: BTreeMap::new(),
+                threshold,
+                dkg_phase: DkgPhases::Complaining,
+                initalization_accumulator: InitializationAccumulator::new(),
+                contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
+                complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone()),
+            };
+            let proposal = key_gen
+                .finalize_complaining_phase(&peer_id.sec_key(), &mut rng)
+                .unwrap_or_else(|_err| {
+                    panic!("Failed to complete complaint stage of {:?}", &peer_id)
+                });
+            generators.push(key_gen);
+            proposals.push(proposal);
+        });
+
+        // Keeps broadcasting the proposals among the generators till no more, i.e. all generators
+        // shall reached the Finalization phase.
+        while !proposals.is_empty() {
+            let proposals_local = std::mem::replace(&mut proposals, Vec::new());
+            for proposal in &proposals_local {
+                for (index, generator) in generators.iter_mut().enumerate() {
+                    if let Ok(Some(proposal_vec)) = generator.handle_message(
+                        peer_ids[index].sec_key(),
+                        &mut rng,
+                        proposal.clone(),
+                    ) {
+                        proposal_vec
+                            .iter()
+                            .for_each(|prop| proposals.push(prop.clone()));
+                    }
+                }
+            }
+        }
+
+        // Compute the keys and threshold signature shares.
+        let msg = "Help I'm trapped in a unit test factory";
+        let pub_key_set = generators[0]
+            .generate_keys()
+            .expect("Failed to generate `PublicKeySet` for node #0")
+            .1
+            .public_key_set;
+        let sig_shares: BTreeMap<_, _> = generators
+            .iter()
+            .enumerate()
+            .map(|(idx, generator)| {
+                assert!(generator.is_ready());
+                let dkg_result = generator
+                    .generate_keys()
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
+                            idx
+                        )
+                    })
+                    .1;
+                let sk = dkg_result.secret_key_share;
+                let pks = dkg_result.public_key_set;
+                assert_eq!(pks, pub_key_set);
+                let sig = sk.sign(msg);
+                assert!(pks.public_key_share(idx).verify(&sig, msg));
+                (idx, sig)
+            })
+            .collect();
+
+        // Test a threshold signature
+        let sig = pub_key_set
+            .combine_signatures(sig_shares.iter().take(threshold + 1))
+            .expect("signature shares match");
+        assert!(pub_key_set.public_key().verify(&sig, msg));
+
+        // Test a second threshold signature
+        let sig2_start_idx = rng.gen_range(1, std::cmp::max(2, sig_shares.len()));
+        let sig2 = pub_key_set
+            .combine_signatures(
+                sig_shares
+                    .iter()
+                    .cycle()
+                    .skip(sig2_start_idx)
+                    .take(threshold + 1),
+            )
+            .expect("signature shares match");
+        assert!(pub_key_set.public_key().verify(&sig2, msg));
+
+        // Test signature aggregated from different share are the same
+        let sig_ser = unwrap!(serialise(&sig));
+        let sig2_ser = unwrap!(serialise(&sig2));
+        assert_eq!(sig_ser, sig2_ser);
+    }
 }
