@@ -142,7 +142,7 @@ pub enum CommitmentOutcome {
     Invalid(CommitmentFault),
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 pub enum DkgPhases {
     Initialization,
     Contribution,
@@ -173,14 +173,14 @@ impl<P: PublicId> InitializationAccumulator<P> {
         sender: u64,
         member_list: BTreeSet<P>,
     ) -> Option<(usize, usize, BTreeSet<P>)> {
-        if self.senders.insert(sender) {
+        if !self.senders.insert(sender) {
             return None;
         }
 
         let paras = (m, n, member_list);
         if let Some(value) = self.initializations.get_mut(&paras) {
             *value += 1;
-            if *value > (2 * m + 1) {
+            if *value > m {
                 return Some(paras);
             }
         } else {
@@ -319,6 +319,9 @@ impl<S: SecretId> KeyGen<S> {
         threshold: usize,
         pub_keys: BTreeSet<S::PublicId>,
     ) -> Result<(KeyGen<S>, DkgMessage<S::PublicId>), Error> {
+        if pub_keys.len() <= threshold {
+            return Err(Error::Unknown);
+        }
         let our_id = sec_key.public_id().clone();
         let our_index = if let Some(index) = pub_keys.iter().position(|id| *id == our_id) {
             index as u64
@@ -347,28 +350,6 @@ impl<S: SecretId> KeyGen<S> {
                 member_list: pub_keys,
             },
         ))
-    }
-
-    #[cfg(test)]
-    /// Initialize an instance with some pre-defined value, only for testing usage.
-    pub fn initialize_for_test(
-        our_id: S::PublicId,
-        our_index: u64,
-        pub_keys: BTreeSet<S::PublicId>,
-        threshold: usize,
-        dkg_phase: DkgPhases,
-    ) -> KeyGen<S> {
-        KeyGen::<S> {
-            our_id,
-            our_index,
-            pub_keys: pub_keys.clone(),
-            parts: BTreeMap::new(),
-            threshold,
-            dkg_phase,
-            initalization_accumulator: InitializationAccumulator::new(),
-            contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone()),
-        }
     }
 
     /// Dispatching an incoming dkg message.
@@ -423,6 +404,7 @@ impl<S: SecretId> KeyGen<S> {
         if self.dkg_phase != DkgPhases::Initialization {
             return Err(Error::Unknown);
         }
+
         if let Some((m, n, member_list)) =
             self.initalization_accumulator
                 .add_initialization(m, n, sender, member_list)
@@ -475,16 +457,27 @@ impl<S: SecretId> KeyGen<S> {
             .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
 
-        if !self
+        if self
             .contribution_accumulator
             .add_contribution(sender_id, sender_index, part)
         {
-            return Ok(None);
+            self.finalize_contributing_phase(sec_key, rng)
+        } else {
+            Ok(None)
         }
+    }
 
+    // TODO: so far this function has to be called externally to indicates a completion of the
+    //       contribution phase. May need to be further verified whether there is a better approach.
+    pub fn finalize_contributing_phase(
+        &mut self,
+        sec_key: &S,
+        rng: &mut dyn rand::Rng,
+    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         self.dkg_phase = DkgPhases::Complaining;
 
         let mut msgs = Vec::new();
+        let mut contributors = BTreeSet::new();
         for ((sender_id, sender_index), part) in self.contribution_accumulator.contributions.clone()
         {
             match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part.clone()) {
@@ -502,6 +495,18 @@ impl<S: SecretId> KeyGen<S> {
                         msg: invalid_contribute,
                     });
                 }
+            }
+            let _ = contributors.insert(sender_id);
+        }
+
+        for expected in self.pub_keys.iter() {
+            if !contributors.contains(expected) {
+                let target = self.node_index(expected).ok_or(Error::Unknown)?;
+                msgs.push(DkgMessage::Complaint {
+                    key_gen_id: self.our_index,
+                    target,
+                    msg: b"Not contributed".to_vec(),
+                });
             }
         }
 
@@ -555,6 +560,10 @@ impl<S: SecretId> KeyGen<S> {
                 let _ = self.pub_keys.remove(failing);
             }
             self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
+        }
+
+        if self.pub_keys.len() <= self.threshold {
+            return Err(Error::Unknown);
         }
 
         self.dkg_phase = DkgPhases::Justification;
@@ -779,6 +788,36 @@ impl<S: SecretId> KeyGen<S> {
 impl<S: SecretId> Debug for KeyGen<S> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "KeyGen{{{:?}}}", self.our_id)
+    }
+}
+
+#[cfg(test)]
+impl<S: SecretId> KeyGen<S> {
+    /// Returns the list of the final participants.
+    pub fn pub_keys(&self) -> &BTreeSet<S::PublicId> {
+        &self.pub_keys
+    }
+
+    /// Initialize an instance with some pre-defined value, only for testing usage.
+    pub fn initialize_for_test(
+        our_id: S::PublicId,
+        our_index: u64,
+        pub_keys: BTreeSet<S::PublicId>,
+        threshold: usize,
+        dkg_phase: DkgPhases,
+    ) -> KeyGen<S> {
+        assert!(pub_keys.len() > threshold);
+        KeyGen::<S> {
+            our_id,
+            our_index,
+            pub_keys: pub_keys.clone(),
+            parts: BTreeMap::new(),
+            threshold,
+            dkg_phase,
+            initalization_accumulator: InitializationAccumulator::new(),
+            contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
+            complaints_accumulator: ComplaintsAccumulator::new(pub_keys),
+        }
     }
 }
 
