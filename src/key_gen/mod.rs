@@ -44,6 +44,9 @@ pub enum Error {
     /// Failed to encrypt message.
     #[fail(display = "Encryption error")]
     Encryption,
+    /// Failed to finalize Complaint phase due to too many non-voters.
+    #[fail(display = "Too many non-voters error")]
+    TooManyNonVoters(BTreeSet<u64>),
 }
 
 impl From<Box<bincode::ErrorKind>> for Error {
@@ -180,7 +183,7 @@ impl<P: PublicId> InitializationAccumulator<P> {
         let paras = (m, n, member_list);
         if let Some(value) = self.initializations.get_mut(&paras) {
             *value += 1;
-            if *value > m {
+            if *value >= m {
                 return Some(paras);
             }
         } else {
@@ -212,6 +215,14 @@ impl<P: PublicId> ContributionAccumulator<P> {
         }
         let _ = self.contributions.insert((sender_id, sender_index), part);
         self.contributions.len() == self.pub_keys.len()
+    }
+
+    fn non_contributors(&self) -> BTreeSet<P> {
+        let mut result = self.pub_keys.clone();
+        self.contributions.keys().for_each(|(pk, _)| {
+            let _ = result.remove(pk);
+        });
+        result
     }
 }
 
@@ -321,7 +332,7 @@ impl<S: SecretId> KeyGen<S> {
         threshold: usize,
         pub_keys: BTreeSet<S::PublicId>,
     ) -> Result<(KeyGen<S>, DkgMessage<S::PublicId>), Error> {
-        if pub_keys.len() <= threshold {
+        if pub_keys.len() < threshold {
             return Err(Error::Unknown);
         }
         let our_id = sec_key.public_id().clone();
@@ -557,15 +568,22 @@ impl<S: SecretId> KeyGen<S> {
         rng: &mut dyn rand::Rng,
     ) -> Result<DkgMessage<S::PublicId>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
+
+        if failings.len() > self.pub_keys.len() - self.threshold {
+            let mut result = BTreeSet::new();
+            failings.iter().for_each(|pk| {
+                if let Some(index) = self.node_index(pk) {
+                    let _ = result.insert(index);
+                }
+            });
+            return Err(Error::TooManyNonVoters(result));
+        }
+
         if !failings.is_empty() {
             for failing in failings.iter() {
                 let _ = self.pub_keys.remove(failing);
             }
             self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
-        }
-
-        if self.pub_keys.len() <= self.threshold {
-            return Err(Error::Unknown);
         }
 
         self.dkg_phase = DkgPhases::Justification;
@@ -693,7 +711,7 @@ impl<S: SecretId> KeyGen<S> {
 
     /// Returns `true` if enough parts are complete to safely generate the new key.
     fn is_ready(&self) -> bool {
-        self.complete_parts_count() > self.threshold
+        self.complete_parts_count() >= self.threshold
     }
 
     /// Returns the new secret key share and the public key set.
@@ -715,6 +733,47 @@ impl<S: SecretId> KeyGen<S> {
             self.pub_keys.clone(),
             DkgResult::new(pk_commitment.into(), sk),
         ))
+    }
+
+    /// This function shall be called when the DKG procedure not reach Finalization phase and before
+    /// discarding the instace. It returns potential invalid peers that causing the blocking, if
+    /// any and provable.
+    pub fn possible_blockers(&self) -> BTreeSet<S::PublicId> {
+        let mut result = BTreeSet::new();
+        match self.dkg_phase {
+            DkgPhases::Initialization => {
+                for (index, pk) in self.pub_keys.iter().enumerate() {
+                    if !self
+                        .initalization_accumulator
+                        .senders
+                        .contains(&(index as u64))
+                    {
+                        let _ = result.insert(pk.clone());
+                    }
+                }
+            }
+            DkgPhases::Contribution => result = self.contribution_accumulator.non_contributors(),
+            DkgPhases::Complaining => {
+                // Non-voters shall already be returned within the error of the
+                // finalize_complaint_phase function call.
+            }
+            DkgPhases::Justification | DkgPhases::Commitment => {
+                // As there was Complaint phase being complated, it is exepcted all nodes involved
+                // in these two phases. Hence here a strict rule is undertaken that: any missing
+                // vote will be considered as a potential non-voter.
+                for part in self.parts.values() {
+                    for (index, pk) in self.pub_keys.iter().enumerate() {
+                        if !part.commitments.contains(&(index as u64)) {
+                            let _ = result.insert(pk.clone());
+                        }
+                    }
+                }
+            }
+            DkgPhases::Finalization => {
+                // Not blocking
+            }
+        }
+        result
     }
 
     /// Handles a `Part`, returns a `PartFault` if it is invalid.
@@ -807,7 +866,7 @@ impl<S: SecretId> KeyGen<S> {
         threshold: usize,
         dkg_phase: DkgPhases,
     ) -> KeyGen<S> {
-        assert!(pub_keys.len() > threshold);
+        assert!(pub_keys.len() >= threshold);
         KeyGen::<S> {
             our_id,
             our_index,
