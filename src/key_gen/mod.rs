@@ -15,9 +15,9 @@ mod tests;
 
 use crate::id::{PublicId, SecretId};
 use crate::key_gen::message::DkgMessage;
+use bincode::{self, deserialize, serialize};
 use dkg_result::DkgResult;
 use failure::Fail;
-use maidsafe_utilities::serialisation;
 use rand;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
@@ -46,8 +46,8 @@ pub enum Error {
     Encryption,
 }
 
-impl From<serialisation::SerialisationError> for Error {
-    fn from(err: serialisation::SerialisationError) -> Error {
+impl From<Box<bincode::ErrorKind>> for Error {
+    fn from(err: Box<bincode::ErrorKind>) -> Error {
         Error::Serialization(format!("{:?}", err))
     }
 }
@@ -218,14 +218,16 @@ impl<P: PublicId> ContributionAccumulator<P> {
 #[derive(Default)]
 struct ComplaintsAccumulator<P: PublicId> {
     pub_keys: BTreeSet<P>,
+    threshold: usize,
     // Indexed by complaining targets.
     complaints: BTreeMap<P, BTreeSet<P>>,
 }
 
 impl<P: PublicId> ComplaintsAccumulator<P> {
-    fn new(pub_keys: BTreeSet<P>) -> ComplaintsAccumulator<P> {
+    fn new(pub_keys: BTreeSet<P>, threshold: usize) -> ComplaintsAccumulator<P> {
         ComplaintsAccumulator {
             pub_keys,
+            threshold,
             complaints: BTreeMap::new(),
         }
     }
@@ -258,7 +260,7 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
         let mut counts: BTreeMap<P, usize> = BTreeMap::new();
 
         for (target_id, accusers) in self.complaints.iter() {
-            if accusers.len() * 3 > self.pub_keys.len() * 2 {
+            if accusers.len() >= self.threshold {
                 let _ = invalid_peers.insert(target_id.clone());
                 for peer in self.pub_keys.iter() {
                     if !accusers.contains(peer) {
@@ -338,7 +340,7 @@ impl<S: SecretId> KeyGen<S> {
             dkg_phase: DkgPhases::Initialization,
             initalization_accumulator: InitializationAccumulator::new(),
             contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone()),
+            complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone(), threshold),
         };
 
         Ok((
@@ -405,7 +407,7 @@ impl<S: SecretId> KeyGen<S> {
             return Err(Error::Unknown);
         }
 
-        if let Some((m, n, member_list)) =
+        if let Some((m, _n, member_list)) =
             self.initalization_accumulator
                 .add_initialization(m, n, sender, member_list)
         {
@@ -419,7 +421,7 @@ impl<S: SecretId> KeyGen<S> {
             let encrypt = |(i, pk): (usize, &S::PublicId)| {
                 let row = our_part.row(i + 1);
                 sec_key
-                    .encrypt(pk, &serialisation::serialise(&row)?)
+                    .encrypt(pk, &serialize(&row)?)
                     .ok_or(Error::Encryption)
             };
             let rows = self
@@ -488,7 +490,7 @@ impl<S: SecretId> KeyGen<S> {
                         key_gen_id: sender_index,
                         part,
                     };
-                    let invalid_contribute = serialisation::serialise(&msg)?;
+                    let invalid_contribute = serialize(&msg)?;
                     msgs.push(DkgMessage::Complaint {
                         key_gen_id: self.our_index,
                         target: sender_index,
@@ -526,7 +528,7 @@ impl<S: SecretId> KeyGen<S> {
     // Handles a `Complaint` message.
     fn handle_complaint(
         &mut self,
-        sec_key: &S,
+        _sec_key: &S,
         sender_index: u64,
         target_index: u64,
         invalid_msg: Vec<u8>,
@@ -575,7 +577,7 @@ impl<S: SecretId> KeyGen<S> {
         let encrypt = |(i, pk): (usize, &S::PublicId)| {
             let row = our_part.row(i + 1);
             sec_key
-                .encrypt(pk, &serialisation::serialise(&row)?)
+                .encrypt(pk, &serialize(&row)?)
                 .ok_or(Error::Encryption)
         };
         let rows = self
@@ -617,7 +619,7 @@ impl<S: SecretId> KeyGen<S> {
         let mut values = Vec::new();
         for (index, pk) in self.pub_keys.iter().enumerate() {
             let val = row.evaluate(index + 1);
-            let ser_val = serialisation::serialise(&FieldWrap(val))?;
+            let ser_val = serialize(&FieldWrap(val))?;
             values.push(sec_key.encrypt(pk, ser_val).ok_or(Error::Encryption)?);
         }
 
@@ -741,8 +743,7 @@ impl<S: SecretId> KeyGen<S> {
         let ser_row = sec_key
             .decrypt(sender_id, &rows[self.our_index as usize])
             .ok_or(PartFault::DecryptRow)?;
-        let row: Poly =
-            serialisation::deserialise(&ser_row).map_err(|_| PartFault::DeserializeRow)?;
+        let row: Poly = deserialize(&ser_row).map_err(|_| PartFault::DeserializeRow)?;
         if row.commitment() != commitment_row {
             return Err(PartFault::RowCommitment);
         }
@@ -772,7 +773,7 @@ impl<S: SecretId> KeyGen<S> {
         let ser_val = sec_key
             .decrypt(sender_id, &values[our_index as usize])
             .ok_or(CommitmentFault::DecryptValue)?;
-        let val = serialisation::deserialise::<FieldWrap<Fr>>(&ser_val)
+        let val = deserialize::<FieldWrap<Fr>>(&ser_val)
             .map_err(|_| CommitmentFault::DeserializeValue)?
             .into_inner();
         if part.commitment.evaluate(our_index + 1, sender_index + 1) != G1Affine::one().mul(val) {
@@ -816,7 +817,7 @@ impl<S: SecretId> KeyGen<S> {
             dkg_phase,
             initalization_accumulator: InitializationAccumulator::new(),
             contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys),
+            complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),
         }
     }
 }

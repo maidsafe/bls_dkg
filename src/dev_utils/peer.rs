@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::id::{PublicId, SecretId};
-use rand::{Rand, Rng};
+use rand::Rng;
 use std::{
     cmp::Ordering,
     collections::hash_map::DefaultHasher,
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
 };
 
@@ -47,10 +47,6 @@ impl PeerId {
             .unwrap_or_else(|| PeerId::new_with_keypair(id))
     }
 
-    pub fn named_peer_ids() -> &'static [PeerId] {
-        &PEERS
-    }
-
     fn new_with_keypair(id: &str) -> Self {
         let (public_key, secret_key) = gen_keypair();
         Self {
@@ -58,18 +54,6 @@ impl PeerId {
             public_key,
             secret_key,
         }
-    }
-
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    pub fn from_index(peer_index: usize) -> Option<Self> {
-        NAMES.get(peer_index).map(|name| PeerId::new(name))
-    }
-
-    pub fn pub_key(&self) -> &Self {
-        &self
     }
 
     pub fn sec_key(&self) -> &Self {
@@ -130,17 +114,6 @@ impl SecretId for PeerId {
         &self
     }
 
-    fn sign_detached(&self, data: &[u8]) -> Signature {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(data);
-        hasher.write(&self.secret_key.0);
-        let hash = hasher.finish().to_le_bytes();
-
-        let mut signature = Signature([0; SIGNATURE_LENGTH]);
-        signature.0[..hash.len()].copy_from_slice(&hash[..]);
-        signature
-    }
-
     fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
         // Pass through: We cannot store encryption keys as they are not reproductible.
         // This code is only used for test.
@@ -182,9 +155,7 @@ impl Debug for Signature {
 }
 
 fn gen_keypair() -> (PublicKey, SecretKey) {
-    use maidsafe_utilities::SeededRng;
-
-    let mut rng = SeededRng::thread_rng();
+    let mut rng = rand::thread_rng();
     let bytes: [u8; KEY_LENGTH] = rng.gen();
     (PublicKey(bytes), SecretKey(bytes))
 }

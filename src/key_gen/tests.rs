@@ -6,15 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::dev_utils::{create_ids, new_common_rng, PeerId, RngChoice};
+use crate::dev_utils::{create_ids, PeerId};
 use crate::id::SecretId;
 use crate::key_gen::{message::DkgMessage, DkgPhases, KeyGen};
-use maidsafe_utilities::{serialisation::serialise, SeededRng};
+use bincode::serialize;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
-
-// Alter the seed here to reproduce failures.
-static SEED: RngChoice = RngChoice::SeededRandom;
 
 // Alter the configure of the number of nodes and the threshold.
 const NODENUM: usize = 7;
@@ -102,7 +99,7 @@ fn messaging(
 
 #[test]
 fn all_nodes_being_responsive() {
-    let mut rng = new_common_rng(SEED);
+    let mut rng = rand::thread_rng();
     let (_, mut generators) = setup_generators(&mut rng, DkgPhases::Initialization, None);
     // With all participants responding properly, the key generating procedure shall be completed
     // automatically. As when there is no complaint, Justification phase will be triggered directly.
@@ -113,7 +110,7 @@ fn all_nodes_being_responsive() {
 
 #[test]
 fn having_one_non_responsive_node() {
-    let mut rng = new_common_rng(SEED);
+    let mut rng = rand::thread_rng();
     let non_responsive = Some(0);
     let (peer_ids, mut generators) =
         setup_generators(&mut rng, DkgPhases::Initialization, non_responsive);
@@ -180,8 +177,8 @@ fn having_one_non_responsive_node() {
 
 #[test]
 fn threshold_signature() {
-    let mut rng = new_common_rng(SEED);
-    let (_, mut generators) = setup_generators(&mut rng, DkgPhases::Complaining, None);
+    let mut rng = rand::thread_rng();
+    let (_, generators) = setup_generators(&mut rng, DkgPhases::Complaining, None);
 
     // Compute the keys and threshold signature shares.
     let msg = "Help I'm trapped in a unit test factory";
@@ -233,15 +230,15 @@ fn threshold_signature() {
     assert!(pub_key_set.public_key().verify(&sig2, msg));
 
     // Test signature aggregated from different share are the same
-    let sig_ser = unwrap!(serialise(&sig));
-    let sig2_ser = unwrap!(serialise(&sig2));
+    let sig_ser = unwrap!(serialize(&sig));
+    let sig2_ser = unwrap!(serialize(&sig2));
     assert_eq!(sig_ser, sig2_ser);
 }
 
 #[test]
 fn threshold_encrypt() {
-    let mut rng = new_common_rng(SEED);
-    let (_, mut generators) = setup_generators(&mut rng, DkgPhases::Complaining, None);
+    let mut rng = rand::thread_rng();
+    let (_, generators) = setup_generators(&mut rng, DkgPhases::Complaining, None);
 
     // Compute the keys and decryption shares.
     let msg = "Help for threshold encryption unit test!".as_bytes();

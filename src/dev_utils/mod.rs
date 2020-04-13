@@ -7,9 +7,5 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod peer;
-mod pseudo_random;
 
-pub use self::{
-    peer::{create_ids, PeerId},
-    pseudo_random::{new_common_rng, new_rng, ReplayRng, RngChoice, RngDebug},
-};
+pub use self::peer::{create_ids, PeerId};

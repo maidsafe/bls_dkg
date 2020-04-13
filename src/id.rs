@@ -27,45 +27,8 @@ pub trait SecretId {
     /// Returns the associated public identity.
     fn public_id(&self) -> &Self::PublicId;
 
-    /// Creates a detached `Signature` of `data`.
-    fn sign_detached(&self, data: &[u8]) -> <Self::PublicId as PublicId>::Signature;
-
-    /// Creates a `Proof` of `data`.
-    fn create_proof(&self, data: &[u8]) -> Proof<Self::PublicId> {
-        Proof {
-            public_id: self.public_id().clone(),
-            signature: self.sign_detached(data),
-        }
-    }
-
     /// Encrypts the message using own Rng to `to`
     fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, msg: M) -> Option<Vec<u8>>;
     /// Decrypt message from `from`.
     fn decrypt(&self, from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>>;
-}
-
-/// A basic helper to carry a given [`Signature`](trait.PublicId.html#associatedtype.Signature)
-/// along with the signer's [`PublicId`](trait.PublicId.html).
-#[serde(bound = "")]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
-pub struct Proof<P: PublicId> {
-    pub(super) public_id: P,
-    pub(super) signature: P::Signature,
-}
-
-impl<P: PublicId> Proof<P> {
-    /// Returns the associated public identity.
-    pub fn public_id(&self) -> &P {
-        &self.public_id
-    }
-
-    /// Returns the associated signature.
-    pub fn signature(&self) -> &P::Signature {
-        &self.signature
-    }
-
-    /// Verifies this `Proof` against `data`.  Returns `true` if valid.
-    pub fn is_valid(&self, data: &[u8]) -> bool {
-        self.public_id.verify_signature(&self.signature, data)
-    }
 }

@@ -12,7 +12,6 @@
     html_favicon_url = "https://maidsafe.net/img/favicon.ico",
     test(attr(forbid(warnings)))
 )]
-#![allow(unused)]
 
 #[cfg(test)]
 #[macro_use]
@@ -23,8 +22,8 @@ extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
 
-mod id;
-mod key_gen;
+pub mod id;
+pub mod key_gen;
 
 #[cfg(test)]
 mod dev_utils;
