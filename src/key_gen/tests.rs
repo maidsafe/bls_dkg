@@ -52,15 +52,16 @@ fn setup_generators<R: RngCore>(
         // Calling `finalize_complaining_phase` to trigger the key_gen instance transit into
         // Justification phase and send out the initial proposal.
         if phase == Phase::Complaining {
-            let proposal = key_gen
-                .finalize_complaining_phase(&peer_id.sec_key(), &mut rng)
+            let initial_proposal = key_gen
+                .timed_phase_transition(&peer_id.sec_key(), &mut rng)
                 .unwrap_or_else(|err| {
                     panic!(
                         "Failed to finalize complaining phase of {:?} {:?}",
                         &peer_id, err
                     )
                 });
-            proposals.push(proposal);
+            // There shall be just one initial proposal from the `finalize_complaining_phase`
+            proposals.push(initial_proposal[0].clone());
         }
         generators.push(key_gen);
     });
@@ -111,7 +112,7 @@ fn all_nodes_being_responsive() {
     // automatically. As when there is no complaint, Justification phase will be triggered directly.
     assert!(generators
         .iter_mut()
-        .all(|key_gen| key_gen.generate_keys().is_ok()));
+        .all(|key_gen| key_gen.generate_keys().is_some()));
 }
 
 #[test]
@@ -124,59 +125,42 @@ fn having_one_non_responsive_node() {
     let mut proposals = Vec::new();
     // With one non_responsive node, Contribution phase cannot be completed automatically. This
     // requires finalize_contributing_phase to be called externally to complete the procedure.
-    peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
-        if let Ok(proposal_vec) =
-            generators[index].finalize_contributing_phase(&peer_id.sec_key(), &mut rng)
-        {
-            if Some(index) != non_responsive {
-                for proposal in proposal_vec {
-                    proposals.push(proposal);
+    // All participants will transit into Complaint phase afterwards, Then requires
+    // finalize_complaining_phase to be called externally to complete the procedure.
+    for _ in 0..2 {
+        peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
+            if let Ok(proposal_vec) =
+                generators[index].timed_phase_transition(&peer_id.sec_key(), &mut rng)
+            {
+                if Some(index) != non_responsive {
+                    for proposal in proposal_vec {
+                        proposals.push(proposal);
+                    }
                 }
             }
-        }
-    });
-    // Continue the procedure with messaging.
-    messaging(
-        &mut rng,
-        &peer_ids,
-        &mut generators,
-        &mut proposals,
-        non_responsive,
-    );
-
-    assert!(proposals.is_empty());
-
-    // With one non_responsive node, all participants will transit into Complaint phase. This
-    // requires finalize_complaining_phase to be called externally to complete the procedure.
-    peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
-        if Some(index) != non_responsive {
-            proposals.push(
-                generators[index]
-                    .finalize_complaining_phase(&peer_id.sec_key(), &mut rng)
-                    .unwrap(),
-            );
-        }
-    });
-    // Continue the procedure with messaging.
-    messaging(
-        &mut rng,
-        &peer_ids,
-        &mut generators,
-        &mut proposals,
-        non_responsive,
-    );
+        });
+        // Continue the procedure with messaging.
+        messaging(
+            &mut rng,
+            &peer_ids,
+            &mut generators,
+            &mut proposals,
+            non_responsive,
+        );
+        assert!(proposals.is_empty());
+    }
 
     generators
         .iter_mut()
         .enumerate()
         .for_each(|(index, key_gen)| {
             if Some(index) != non_responsive {
-                assert!(key_gen.generate_keys().is_ok());
+                assert!(key_gen.generate_keys().is_some());
                 assert!(!key_gen
                     .pub_keys()
                     .contains(&peer_ids[non_responsive.unwrap()]));
             } else {
-                assert!(key_gen.generate_keys().is_err());
+                assert!(key_gen.generate_keys().is_none());
             }
         });
 }
@@ -200,7 +184,7 @@ fn threshold_signature() {
             assert!(generator.is_ready());
             let outcome = generator
                 .generate_keys()
-                .unwrap_or_else(|_| {
+                .unwrap_or_else(|| {
                     panic!(
                         "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
                         idx
@@ -262,7 +246,7 @@ fn threshold_encrypt() {
             assert!(generator.is_ready());
             let outcome = generator
                 .generate_keys()
-                .unwrap_or_else(|_| {
+                .unwrap_or_else(|| {
                     panic!(
                         "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
                         idx

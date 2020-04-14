@@ -48,6 +48,9 @@ pub enum Error {
     /// Failed to finalize Complaint phase due to too many non-voters.
     #[error(display = "Too many non-voters error")]
     TooManyNonVoters(BTreeSet<u64>),
+    /// Unexpected phase.
+    #[error(display = "Unexpected phase")]
+    UnexpectedPhase { expected: Phase, actual: Phase },
 }
 
 impl From<Box<bincode::ErrorKind>> for Error {
@@ -146,7 +149,7 @@ pub enum CommitmentOutcome {
     Invalid(CommitmentFault),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum Phase {
     Initialization,
     Contribution,
@@ -417,7 +420,10 @@ impl<S: SecretId> KeyGen<S> {
         member_list: BTreeSet<S::PublicId>,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         if self.phase != Phase::Initialization {
-            return Err(Error::Unknown);
+            return Err(Error::UnexpectedPhase {
+                expected: Phase::Initialization,
+                actual: self.phase,
+            });
         }
 
         if let Some((m, _n, member_list)) =
@@ -465,7 +471,10 @@ impl<S: SecretId> KeyGen<S> {
         part: Part,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         if self.phase != Phase::Contribution {
-            return Err(Error::Unknown);
+            return Err(Error::UnexpectedPhase {
+                expected: Phase::Contribution,
+                actual: self.phase,
+            });
         }
 
         let sender_id = self
@@ -486,7 +495,28 @@ impl<S: SecretId> KeyGen<S> {
     //       contribution phase. That is, the owner of the key_gen instance has to wait for a fixed
     //       interval, say an expected timer of 5 minutes, to allow the messages to be exchanged.
     //       May need to be further verified whether there is a better approach.
-    pub fn finalize_contributing_phase<R: RngCore>(
+    pub fn timed_phase_transition<R: RngCore>(
+        &mut self,
+        sec_key: &S,
+        rng: &mut R,
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        match self.phase {
+            Phase::Contribution => self.finalize_contributing_phase(sec_key, rng),
+            Phase::Complaining => self.finalize_complaining_phase(sec_key, rng),
+            Phase::Initialization => Err(Error::UnexpectedPhase {
+                expected: Phase::Contribution,
+                actual: self.phase,
+            }),
+            Phase::Commitment | Phase::Justification => Err(Error::UnexpectedPhase {
+                expected: Phase::Complaining,
+                actual: self.phase,
+            }),
+
+            Phase::Finalization => Ok(Vec::new()),
+        }
+    }
+
+    fn finalize_contributing_phase<R: RngCore>(
         &mut self,
         sec_key: &S,
         rng: &mut R,
@@ -530,14 +560,10 @@ impl<S: SecretId> KeyGen<S> {
         // In case of no complaints, calling finalize_complaining_phase to transit into
         // `Justification` phase.
         if msgs.is_empty() {
-            if let Ok(msg) = self.finalize_complaining_phase(sec_key, rng) {
-                msgs.push(msg);
-            } else {
-                return Err(Error::Unknown);
-            }
+            self.finalize_complaining_phase(sec_key, rng)
+        } else {
+            Ok(msgs)
         }
-
-        Ok(msgs)
     }
 
     // Handles a `Complaint` message.
@@ -549,7 +575,10 @@ impl<S: SecretId> KeyGen<S> {
         invalid_msg: Vec<u8>,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         if self.phase != Phase::Complaining {
-            return Err(Error::Unknown);
+            return Err(Error::UnexpectedPhase {
+                expected: Phase::Complaining,
+                actual: self.phase,
+            });
         }
 
         let sender_id = self
@@ -564,13 +593,11 @@ impl<S: SecretId> KeyGen<S> {
         Ok(Vec::new())
     }
 
-    // TODO: so far this function has to be called externally to indicates a completion of complain
-    //       phase. May need to be further verified whether there is a better approach.
-    pub fn finalize_complaining_phase<R: RngCore>(
+    fn finalize_complaining_phase<R: RngCore>(
         &mut self,
         sec_key: &S,
         rng: &mut R,
-    ) -> Result<Message<S::PublicId>, Error> {
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
 
         if failings.len() > self.pub_keys.len() - self.threshold {
@@ -608,10 +635,12 @@ impl<S: SecretId> KeyGen<S> {
             .enumerate()
             .map(encrypt)
             .collect::<Result<Vec<_>, Error>>()?;
-        Ok(Message::Justification {
+        let mut result = Vec::new();
+        result.push(Message::Justification {
             key_gen_id: self.our_index,
             part: Part(justify, rows),
-        })
+        });
+        Ok(result)
     }
 
     // Handles a `Justification` message.
@@ -622,7 +651,10 @@ impl<S: SecretId> KeyGen<S> {
         part: Part,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         if self.phase != Phase::Justification {
-            return Err(Error::Unknown);
+            return Err(Error::UnexpectedPhase {
+                expected: Phase::Justification,
+                actual: self.phase,
+            });
         }
 
         let sender_id = self
@@ -666,7 +698,10 @@ impl<S: SecretId> KeyGen<S> {
         commitment: Commitment,
     ) -> Result<CommitmentOutcome, Error> {
         if self.phase != Phase::Commitment {
-            return Err(Error::Unknown);
+            return Err(Error::UnexpectedPhase {
+                expected: Phase::Commitment,
+                actual: self.phase,
+            });
         }
 
         let sender_id = self
@@ -719,9 +754,9 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Returns the new secret key share and the public key set.
-    pub fn generate_keys(&self) -> Result<(BTreeSet<S::PublicId>, Outcome), Error> {
+    pub fn generate_keys(&self) -> Option<(BTreeSet<S::PublicId>, Outcome)> {
         if self.phase != Phase::Finalization {
-            return Err(Error::Unknown);
+            return None;
         }
 
         let mut pk_commitment = Poly::zero().commitment();
@@ -733,7 +768,7 @@ impl<S: SecretId> KeyGen<S> {
             sk_val.add_assign(&row.evaluate(0));
         }
         let sk = SecretKeyShare::from_mut(&mut sk_val);
-        Ok((
+        Some((
             self.pub_keys.clone(),
             Outcome::new(pk_commitment.into(), sk),
         ))
