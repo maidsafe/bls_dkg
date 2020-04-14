@@ -15,18 +15,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-pub const NAMES: &[&str] = &[
+pub static NAMES: &[&str] = &[
     "Alice", "Bob", "Carol", "Dave", "Eric", "Fred", "Gina", "Hank", "Iris", "Judy", "Kent",
     "Lucy", "Mike", "Nina", "Oran", "Paul", "Quin", "Rose", "Stan", "Tina", "Ulf", "Vera", "Will",
     "Xaviera", "Yakov", "Zaida", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
 ];
-
-lazy_static! {
-    static ref PEERS: Vec<PeerId> = NAMES
-        .iter()
-        .map(|name| PeerId::new_with_keypair(name))
-        .collect();
-}
 
 /// **NOT FOR PRODUCTION USE**: Mock type implementing `PublicId` and `SecretId` traits.  For
 /// non-mocks, these two traits must be implemented by two separate types; a public key and secret
@@ -40,10 +33,10 @@ pub struct PeerId {
 
 impl PeerId {
     pub fn new(id: &str) -> Self {
-        PEERS
+        NAMES
             .iter()
+            .map(|name| PeerId::new_with_keypair(name))
             .find(|peer| peer.id == id)
-            .cloned()
             .unwrap_or_else(|| PeerId::new_with_keypair(id))
     }
 

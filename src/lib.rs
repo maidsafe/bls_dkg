@@ -13,12 +13,6 @@
     test(attr(forbid(warnings)))
 )]
 
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-#[cfg(test)]
-#[macro_use]
-extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
 

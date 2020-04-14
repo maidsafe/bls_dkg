@@ -17,8 +17,8 @@ use crate::id::{PublicId, SecretId};
 use crate::key_gen::message::DkgMessage;
 use bincode::{self, deserialize, serialize};
 use dkg_result::DkgResult;
-use failure::Fail;
-use rand;
+use err_derive;
+use rand::{self, RngCore};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
@@ -30,22 +30,22 @@ use threshold_crypto::{
 };
 
 /// A local error while handling a message, that was not caused by that message being invalid.
-#[derive(Clone, Eq, PartialEq, Debug, Fail)]
+#[derive(Clone, Eq, err_derive::Error, PartialEq, Debug)]
 pub enum Error {
     /// Unknown error.
-    #[fail(display = "Unknown")]
+    #[error(display = "Unknown")]
     Unknown,
     /// Unknown sender.
-    #[fail(display = "Unknown sender")]
+    #[error(display = "Unknown sender")]
     UnknownSender,
     /// Failed to serialize message.
-    #[fail(display = "Serialization error: {}", _0)]
+    #[error(display = "Serialization error: {}", _0)]
     Serialization(String),
     /// Failed to encrypt message.
-    #[fail(display = "Encryption error")]
+    #[error(display = "Encryption error")]
     Encryption,
     /// Failed to finalize Complaint phase due to too many non-voters.
-    #[fail(display = "Too many non-voters error")]
+    #[error(display = "Too many non-voters error")]
     TooManyNonVoters(BTreeSet<u64>),
 }
 
@@ -366,10 +366,10 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Dispatching an incoming dkg message.
-    pub fn handle_message(
+    pub fn handle_message<R: RngCore>(
         &mut self,
         sec_key: &S,
-        rng: &mut dyn rand::Rng,
+        rng: &mut R,
         dkg_msg: DkgMessage<S::PublicId>,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         match dkg_msg {
@@ -405,10 +405,10 @@ impl<S: SecretId> KeyGen<S> {
 
     // Handles an incoming initialize message. Creates the `Contribution` message once quorumn
     // agreement reached, and the message should be multicast to all nodes.
-    fn handle_initialization(
+    fn handle_initialization<R: RngCore>(
         &mut self,
         sec_key: &S,
-        rng: &mut dyn rand::Rng,
+        rng: &mut R,
         m: usize,
         n: usize,
         sender: u64,
@@ -455,10 +455,10 @@ impl<S: SecretId> KeyGen<S> {
     // Handles a `Contribution` message.
     // If it is invalid, sends a `Complaint` message targeting the sender to be broadcast.
     // If all contributed, returns a `Commitment` message to be broadcast.
-    fn handle_contribution(
+    fn handle_contribution<R: RngCore>(
         &mut self,
         sec_key: &S,
-        rng: &mut dyn rand::Rng,
+        rng: &mut R,
         sender_index: u64,
         part: Part,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
@@ -482,10 +482,10 @@ impl<S: SecretId> KeyGen<S> {
 
     // TODO: so far this function has to be called externally to indicates a completion of the
     //       contribution phase. May need to be further verified whether there is a better approach.
-    pub fn finalize_contributing_phase(
+    pub fn finalize_contributing_phase<R: RngCore>(
         &mut self,
         sec_key: &S,
-        rng: &mut dyn rand::Rng,
+        rng: &mut R,
     ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
         self.dkg_phase = DkgPhases::Complaining;
 
@@ -562,10 +562,10 @@ impl<S: SecretId> KeyGen<S> {
 
     // TODO: so far this function has to be called externally to indicates a completion of complain
     //       phase. May need to be further verified whether there is a better approach.
-    pub fn finalize_complaining_phase(
+    pub fn finalize_complaining_phase<R: RngCore>(
         &mut self,
         sec_key: &S,
-        rng: &mut dyn rand::Rng,
+        rng: &mut R,
     ) -> Result<DkgMessage<S::PublicId>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
 
@@ -882,41 +882,45 @@ impl<S: SecretId> KeyGen<S> {
 }
 
 /// `Commitment` faulty entries.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Fail, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Eq, err_derive::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
+)]
 pub enum CommitmentFault {
     /// The number of values differs from the number of nodes.
-    #[fail(display = "The number of values differs from the number of nodes")]
+    #[error(display = "The number of values differs from the number of nodes")]
     ValueCount,
     /// No corresponding Part received.
-    #[fail(display = "No corresponding Part received")]
+    #[error(display = "No corresponding Part received")]
     MissingPart,
     /// Value decryption failed.
-    #[fail(display = "Value decryption failed")]
+    #[error(display = "Value decryption failed")]
     DecryptValue,
     /// Value deserialization failed.
-    #[fail(display = "Value deserialization failed")]
+    #[error(display = "Value deserialization failed")]
     DeserializeValue,
     /// Value doesn't match the commitment.
-    #[fail(display = "Value doesn't match the commitment")]
+    #[error(display = "Value doesn't match the commitment")]
     ValueCommitment,
 }
 
 /// `Part` faulty entries.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Fail, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Eq, err_derive::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
+)]
 pub enum PartFault {
     /// The number of rows differs from the number of nodes.
-    #[fail(display = "The number of rows differs from the number of nodes")]
+    #[error(display = "The number of rows differs from the number of nodes")]
     RowCount,
     /// Received multiple different Part messages from the same sender.
-    #[fail(display = "Received multiple different Part messages from the same sender")]
+    #[error(display = "Received multiple different Part messages from the same sender")]
     MultipleParts,
     /// Could not decrypt our row in the Part message.
-    #[fail(display = "Could not decrypt our row in the Part message")]
+    #[error(display = "Could not decrypt our row in the Part message")]
     DecryptRow,
     /// Could not deserialize our row in the Part message.
-    #[fail(display = "Could not deserialize our row in the Part message")]
+    #[error(display = "Could not deserialize our row in the Part message")]
     DeserializeRow,
     /// Row does not match the commitment.
-    #[fail(display = "Row does not match the commitment")]
+    #[error(display = "Row does not match the commitment")]
     RowCommitment,
 }

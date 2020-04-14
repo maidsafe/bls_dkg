@@ -10,15 +10,15 @@ use crate::dev_utils::{create_ids, PeerId};
 use crate::id::SecretId;
 use crate::key_gen::{message::DkgMessage, DkgPhases, KeyGen};
 use bincode::serialize;
-use rand::Rng;
+use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Alter the configure of the number of nodes and the threshold.
 const NODENUM: usize = 7;
 const THRESHOLD: usize = 5;
 
-fn setup_generators(
-    mut rng: &mut dyn Rng,
+fn setup_generators<R: RngCore>(
+    mut rng: &mut R,
     dkg_phase: DkgPhases,
     non_responsive: Option<usize>,
 ) -> (Vec<PeerId>, Vec<KeyGen<PeerId>>) {
@@ -70,8 +70,8 @@ fn setup_generators(
     (peer_ids, generators)
 }
 
-fn messaging(
-    mut rng: &mut dyn Rng,
+fn messaging<R: RngCore>(
+    mut rng: &mut R,
     peer_ids: &[PeerId],
     generators: &mut Vec<KeyGen<PeerId>>,
     proposals: &mut Vec<DkgMessage<PeerId>>,
@@ -230,8 +230,8 @@ fn threshold_signature() {
     assert!(pub_key_set.public_key().verify(&sig2, msg));
 
     // Test signature aggregated from different share are the same
-    let sig_ser = unwrap!(serialize(&sig));
-    let sig2_ser = unwrap!(serialize(&sig2));
+    let sig_ser = serialize(&sig).unwrap_or_else(|_err| b"cannot serialize signature 1".to_vec());
+    let sig2_ser = serialize(&sig2).unwrap_or_else(|_err| b"cannot serialize signature 2".to_vec());
     assert_eq!(sig_ser, sig2_ser);
 }
 
