@@ -11,7 +11,8 @@ use crate::dev_utils::{create_ids, PeerId};
 use crate::id::SecretId;
 use crate::key_gen::{message::Message, Error, KeyGen, Phase};
 use bincode::serialize;
-use rand::{Rng, RngCore};
+use itertools::Itertools;
+use rand::RngCore;
 use std::collections::{BTreeMap, BTreeSet};
 
 // Alter the configure of the number of nodes and the threshold.
@@ -256,29 +257,30 @@ fn threshold_signature() {
         })
         .collect();
 
-    // Test a threshold signature
-    let sig = pub_key_set
-        .combine_signatures(sig_shares.iter().take(THRESHOLD + 1))
-        .expect("signature shares match");
-    assert!(pub_key_set.public_key().verify(&sig, msg));
+    // Test threshold signature verification for a combination of signatures
+    let sig_combinations = sig_shares.iter().combinations(THRESHOLD + 1);
 
-    // Test a second threshold signature
-    let sig2_start_idx = rng.gen_range(1, std::cmp::max(2, sig_shares.len()));
-    let sig2 = pub_key_set
-        .combine_signatures(
-            sig_shares
-                .iter()
-                .cycle()
-                .skip(sig2_start_idx)
-                .take(THRESHOLD + 1),
-        )
-        .expect("signature shares match");
-    assert!(pub_key_set.public_key().verify(&sig2, msg));
+    for combination in sig_combinations.clone() {
+        let sig = pub_key_set
+            .combine_signatures(combination)
+            .expect("signature shares match");
+        assert!(pub_key_set.public_key().verify(&sig, msg));
+    }
 
-    // Test signature aggregated from different share are the same
-    let sig_ser = serialize(&sig).unwrap_or_else(|_err| b"cannot serialize signature 1".to_vec());
-    let sig2_ser = serialize(&sig2).unwrap_or_else(|_err| b"cannot serialize signature 2".to_vec());
-    assert_eq!(sig_ser, sig2_ser);
+    // Test signatures aggregated from a combination of different share - should be the same
+    for signature_shares in sig_combinations.collect_vec().windows(2) {
+        let sig = pub_key_set
+            .combine_signatures(signature_shares[0].clone())
+            .expect("signature shares match");
+        let sig_ser =
+            serialize(&sig).unwrap_or_else(|_err| b"cannot serialize signature 1".to_vec());
+        let sig2 = pub_key_set
+            .combine_signatures(signature_shares[1].clone())
+            .expect("signature shares match");
+        let sig2_ser =
+            serialize(&sig2).unwrap_or_else(|_err| b"cannot serialize signature 2".to_vec());
+        assert_eq!(sig_ser, sig2_ser);
+    }
 }
 
 #[test]
