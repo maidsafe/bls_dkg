@@ -1,20 +1,22 @@
 // Copyright 2020 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
-// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied. Please review the Licences for the specific language governing
-// permissions and limitations relating to use of the SAFE Network Software.
+// This SAFE Network Software is licensed to you under the MIT license <LICENSE-MIT
+// https://opensource.org/licenses/MIT> or the Modified BSD license <LICENSE-BSD
+// https://opensource.org/licenses/BSD-3-Clause>, at your option. This file may not be copied,
+// modified, or distributed except according to those terms. Please review the Licences for the
+// specific language governing permissions and limitations relating to use of the SAFE Network
+// Software.
 
 use super::{Commitment, Part};
 use crate::id::PublicId;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt;
 
 /// Messages used for running BLS DKG.
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum DkgMessage<P: PublicId> {
+pub enum Message<P: PublicId> {
     Initialization {
         key_gen_id: u64,
         m: usize,
@@ -40,23 +42,21 @@ pub enum DkgMessage<P: PublicId> {
     },
 }
 
-impl<P: PublicId> fmt::Debug for DkgMessage<P> {
+impl<P: PublicId> fmt::Debug for Message<P> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            DkgMessage::Initialization { key_gen_id, .. } => {
-                write!(formatter, "DkgInitialization({})", key_gen_id)
+            Message::Initialization { key_gen_id, .. } => {
+                write!(formatter, "Initialization({})", key_gen_id)
             }
-            DkgMessage::Contribution { key_gen_id, .. } => {
-                write!(formatter, "DkgContribution({})", key_gen_id)
+            Message::Contribution { key_gen_id, .. } => {
+                write!(formatter, "Contribution({})", key_gen_id)
             }
-            DkgMessage::Complaint { key_gen_id, .. } => {
-                write!(formatter, "DkgComplaint({})", key_gen_id)
+            Message::Complaint { key_gen_id, .. } => write!(formatter, "Complaint({})", key_gen_id),
+            Message::Justification { key_gen_id, .. } => {
+                write!(formatter, "Justification({})", key_gen_id)
             }
-            DkgMessage::Justification { key_gen_id, .. } => {
-                write!(formatter, "DkgJustification({})", key_gen_id)
-            }
-            DkgMessage::Commitment { key_gen_id, .. } => {
-                write!(formatter, "DkgCommitment({})", key_gen_id)
+            Message::Commitment { key_gen_id, .. } => {
+                write!(formatter, "Commitment({})", key_gen_id)
             }
         }
     }

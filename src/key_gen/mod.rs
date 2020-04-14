@@ -1,23 +1,24 @@
 // Copyright 2020 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
-// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied. Please review the Licences for the specific language governing
-// permissions and limitations relating to use of the SAFE Network Software.
+// This SAFE Network Software is licensed to you under the MIT license <LICENSE-MIT
+// https://opensource.org/licenses/MIT> or the Modified BSD license <LICENSE-BSD
+// https://opensource.org/licenses/BSD-3-Clause>, at your option. This file may not be copied,
+// modified, or distributed except according to those terms. Please review the Licences for the
+// specific language governing permissions and limitations relating to use of the SAFE Network
+// Software.
 
-pub mod dkg_result;
 pub mod message;
+pub mod outcome;
 mod rng_adapter;
 
 #[cfg(test)]
 mod tests;
 
 use crate::id::{PublicId, SecretId};
-use crate::key_gen::message::DkgMessage;
+use crate::key_gen::message::Message;
 use bincode::{self, deserialize, serialize};
-use dkg_result::DkgResult;
 use err_derive;
+use outcome::Outcome;
 use rand::{self, RngCore};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
@@ -146,7 +147,7 @@ pub enum CommitmentOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-pub enum DkgPhases {
+pub enum Phase {
     Initialization,
     Contribution,
     Complaining,
@@ -171,6 +172,7 @@ impl<P: PublicId> InitializationAccumulator<P> {
 
     fn add_initialization(
         &mut self,
+        // Following the `m of n` terminology, here m is the threshold and n is the total number.
         m: usize,
         n: usize,
         sender: u64,
@@ -296,13 +298,13 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
 ///
 /// A normal usage flow will be:
 ///   a, call `initialize` first to generate an instance.
-///   b, multicasting the return `DkgMessage` to all participants.
-///   c, call `handle_message` function to handle the incoming `DkgMessage` and multicasting the
-///      resulted `DkgMessage` (if has) to all participants.
+///   b, multicasting the return `Message` to all participants.
+///   c, call `handle_message` function to handle the incoming `Message` and multicasting the
+///      resulted `Message` (if has) to all participants.
 ///   d, call `finalize_complaining_phase` to complete the complaining phase. (This separate call may need to
 ///      depend on a separate timer & checker against the key generator's current status)
-///   e, repeat step c when there is incoming `DkgMessage`.
-///   f, call `generate` to get the public-key set and secret-key share, if the procedure finalized.
+///   e, repeat step c when there is incoming `Message`.
+///   f, call `generate_keys` to get the public-key set and secret-key share, if the procedure finalized.
 pub struct KeyGen<S: SecretId> {
     /// Our node ID.
     our_id: S::PublicId,
@@ -315,7 +317,7 @@ pub struct KeyGen<S: SecretId> {
     /// The degree of the generated polynomial.
     threshold: usize,
     /// Current DKG phase.
-    dkg_phase: DkgPhases,
+    phase: Phase,
     /// Accumulates initializations.
     initalization_accumulator: InitializationAccumulator<S::PublicId>,
     /// Accumulates contributions.
@@ -331,7 +333,7 @@ impl<S: SecretId> KeyGen<S> {
         sec_key: &S,
         threshold: usize,
         pub_keys: BTreeSet<S::PublicId>,
-    ) -> Result<(KeyGen<S>, DkgMessage<S::PublicId>), Error> {
+    ) -> Result<(KeyGen<S>, Message<S::PublicId>), Error> {
         if pub_keys.len() < threshold {
             return Err(Error::Unknown);
         }
@@ -348,7 +350,7 @@ impl<S: SecretId> KeyGen<S> {
             pub_keys: pub_keys.clone(),
             parts: BTreeMap::new(),
             threshold,
-            dkg_phase: DkgPhases::Initialization,
+            phase: Phase::Initialization,
             initalization_accumulator: InitializationAccumulator::new(),
             contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone(), threshold),
@@ -356,7 +358,7 @@ impl<S: SecretId> KeyGen<S> {
 
         Ok((
             key_gen,
-            DkgMessage::Initialization {
+            Message::Initialization {
                 key_gen_id: our_index,
                 m: threshold,
                 n: pub_keys.len(),
@@ -370,34 +372,34 @@ impl<S: SecretId> KeyGen<S> {
         &mut self,
         sec_key: &S,
         rng: &mut R,
-        dkg_msg: DkgMessage<S::PublicId>,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        match dkg_msg {
-            DkgMessage::Initialization {
+        msg: Message<S::PublicId>,
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        match msg {
+            Message::Initialization {
                 key_gen_id,
                 m,
                 n,
                 member_list,
             } => self.handle_initialization(sec_key, rng, m, n, key_gen_id, member_list),
-            DkgMessage::Contribution { key_gen_id, part } => {
+            Message::Contribution { key_gen_id, part } => {
                 self.handle_contribution(sec_key, rng, key_gen_id, part)
             }
-            DkgMessage::Complaint {
+            Message::Complaint {
                 key_gen_id,
                 target,
                 msg,
             } => self.handle_complaint(sec_key, key_gen_id, target, msg),
-            DkgMessage::Justification { key_gen_id, part } => {
+            Message::Justification { key_gen_id, part } => {
                 self.handle_justification(sec_key, key_gen_id, part)
             }
-            DkgMessage::Commitment {
+            Message::Commitment {
                 key_gen_id,
                 commitment,
             } => {
                 if let Err(err) = self.handle_commitment(sec_key, key_gen_id, commitment) {
                     Err(err)
                 } else {
-                    Ok(None)
+                    Ok(Vec::new())
                 }
             }
         }
@@ -413,8 +415,8 @@ impl<S: SecretId> KeyGen<S> {
         n: usize,
         sender: u64,
         member_list: BTreeSet<S::PublicId>,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Initialization {
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        if self.phase != Phase::Initialization {
             return Err(Error::Unknown);
         }
 
@@ -424,7 +426,7 @@ impl<S: SecretId> KeyGen<S> {
         {
             self.threshold = m;
             self.pub_keys = member_list;
-            self.dkg_phase = DkgPhases::Contribution;
+            self.phase = Phase::Contribution;
 
             let mut rng = rng_adapter::RngAdapter(&mut *rng);
             let our_part = BivarPoly::random(self.threshold, &mut rng);
@@ -443,13 +445,13 @@ impl<S: SecretId> KeyGen<S> {
                 .collect::<Result<Vec<_>, Error>>()?;
 
             let mut result = Vec::new();
-            result.push(DkgMessage::Contribution {
+            result.push(Message::Contribution {
                 key_gen_id: self.our_index,
                 part: Part(commitment, rows),
             });
-            return Ok(Some(result));
+            return Ok(result);
         }
-        Ok(None)
+        Ok(Vec::new())
     }
 
     // Handles a `Contribution` message.
@@ -461,8 +463,8 @@ impl<S: SecretId> KeyGen<S> {
         rng: &mut R,
         sender_index: u64,
         part: Part,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Contribution {
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        if self.phase != Phase::Contribution {
             return Err(Error::Unknown);
         }
 
@@ -476,18 +478,20 @@ impl<S: SecretId> KeyGen<S> {
         {
             self.finalize_contributing_phase(sec_key, rng)
         } else {
-            Ok(None)
+            Ok(Vec::new())
         }
     }
 
-    // TODO: so far this function has to be called externally to indicates a completion of the
-    //       contribution phase. May need to be further verified whether there is a better approach.
+    // TODO: So far this function has to be called externally to indicates a completion of the
+    //       contribution phase. That is, the owner of the key_gen instance has to wait for a fixed
+    //       interval, say an expected timer of 5 minutes, to allow the messages to be exchanged.
+    //       May need to be further verified whether there is a better approach.
     pub fn finalize_contributing_phase<R: RngCore>(
         &mut self,
         sec_key: &S,
         rng: &mut R,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        self.dkg_phase = DkgPhases::Complaining;
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        self.phase = Phase::Complaining;
 
         let mut msgs = Vec::new();
         let mut contributors = BTreeSet::new();
@@ -497,12 +501,12 @@ impl<S: SecretId> KeyGen<S> {
                 Ok(Some(_row)) => {}
                 Ok(None) => {}
                 Err(_fault) => {
-                    let msg = DkgMessage::Contribution::<S::PublicId> {
+                    let msg = Message::Contribution::<S::PublicId> {
                         key_gen_id: sender_index,
                         part,
                     };
                     let invalid_contribute = serialize(&msg)?;
-                    msgs.push(DkgMessage::Complaint {
+                    msgs.push(Message::Complaint {
                         key_gen_id: self.our_index,
                         target: sender_index,
                         msg: invalid_contribute,
@@ -515,7 +519,7 @@ impl<S: SecretId> KeyGen<S> {
         for expected in self.pub_keys.iter() {
             if !contributors.contains(expected) {
                 let target = self.node_index(expected).ok_or(Error::Unknown)?;
-                msgs.push(DkgMessage::Complaint {
+                msgs.push(Message::Complaint {
                     key_gen_id: self.our_index,
                     target,
                     msg: b"Not contributed".to_vec(),
@@ -533,7 +537,7 @@ impl<S: SecretId> KeyGen<S> {
             }
         }
 
-        Ok(Some(msgs))
+        Ok(msgs)
     }
 
     // Handles a `Complaint` message.
@@ -543,8 +547,8 @@ impl<S: SecretId> KeyGen<S> {
         sender_index: u64,
         target_index: u64,
         invalid_msg: Vec<u8>,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Complaining {
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        if self.phase != Phase::Complaining {
             return Err(Error::Unknown);
         }
 
@@ -557,7 +561,7 @@ impl<S: SecretId> KeyGen<S> {
 
         self.complaints_accumulator
             .add_complaint(sender_id, target_id, invalid_msg);
-        Ok(None)
+        Ok(Vec::new())
     }
 
     // TODO: so far this function has to be called externally to indicates a completion of complain
@@ -566,7 +570,7 @@ impl<S: SecretId> KeyGen<S> {
         &mut self,
         sec_key: &S,
         rng: &mut R,
-    ) -> Result<DkgMessage<S::PublicId>, Error> {
+    ) -> Result<Message<S::PublicId>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
 
         if failings.len() > self.pub_keys.len() - self.threshold {
@@ -586,7 +590,7 @@ impl<S: SecretId> KeyGen<S> {
             self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
         }
 
-        self.dkg_phase = DkgPhases::Justification;
+        self.phase = Phase::Justification;
         self.parts = BTreeMap::new();
 
         let mut rng = rng_adapter::RngAdapter(&mut *rng);
@@ -604,7 +608,7 @@ impl<S: SecretId> KeyGen<S> {
             .enumerate()
             .map(encrypt)
             .collect::<Result<Vec<_>, Error>>()?;
-        Ok(DkgMessage::Justification {
+        Ok(Message::Justification {
             key_gen_id: self.our_index,
             part: Part(justify, rows),
         })
@@ -616,8 +620,8 @@ impl<S: SecretId> KeyGen<S> {
         sec_key: &S,
         sender_index: u64,
         part: Part,
-    ) -> Result<Option<Vec<DkgMessage<S::PublicId>>>, Error> {
-        if self.dkg_phase != DkgPhases::Justification {
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        if self.phase != Phase::Justification {
             return Err(Error::Unknown);
         }
 
@@ -626,11 +630,11 @@ impl<S: SecretId> KeyGen<S> {
             .ok_or(Error::UnknownSender)?;
         let row = match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part) {
             Ok(Some(row)) => row,
-            Ok(None) => return Ok(None),
+            Ok(None) => return Ok(Vec::new()),
             Err(_fault) => {
                 // In case of a failure, the sender shall be removed directly.
                 let _ = self.pub_keys.remove(&sender_id);
-                return Ok(None);
+                return Ok(Vec::new());
             }
         };
         // The row is valid. Encrypt one value for each node and broadcast a `Commitment`.
@@ -642,16 +646,16 @@ impl<S: SecretId> KeyGen<S> {
         }
 
         let mut result = Vec::new();
-        result.push(DkgMessage::Commitment {
+        result.push(Message::Commitment {
             key_gen_id: self.our_index,
             commitment: Commitment(sender_index, values),
         });
 
         if self.parts.len() == self.pub_keys.len() {
-            self.dkg_phase = DkgPhases::Commitment;
+            self.phase = Phase::Commitment;
         }
 
-        Ok(Some(result))
+        Ok(result)
     }
 
     // Handles a `Commitment` message.
@@ -661,7 +665,7 @@ impl<S: SecretId> KeyGen<S> {
         sender_index: u64,
         commitment: Commitment,
     ) -> Result<CommitmentOutcome, Error> {
-        if self.dkg_phase != DkgPhases::Commitment {
+        if self.phase != Phase::Commitment {
             return Err(Error::Unknown);
         }
 
@@ -673,7 +677,7 @@ impl<S: SecretId> KeyGen<S> {
             match self.handle_commitment_or_fault(sec_key, &sender_id, sender_index, commitment) {
                 Ok(()) => {
                     if self.is_ready() {
-                        self.dkg_phase = DkgPhases::Finalization;
+                        self.phase = Phase::Finalization;
                     }
                     CommitmentOutcome::Valid
                 }
@@ -715,8 +719,8 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Returns the new secret key share and the public key set.
-    pub fn generate_keys(&self) -> Result<(BTreeSet<S::PublicId>, DkgResult), Error> {
-        if self.dkg_phase != DkgPhases::Finalization {
+    pub fn generate_keys(&self) -> Result<(BTreeSet<S::PublicId>, Outcome), Error> {
+        if self.phase != Phase::Finalization {
             return Err(Error::Unknown);
         }
 
@@ -731,7 +735,7 @@ impl<S: SecretId> KeyGen<S> {
         let sk = SecretKeyShare::from_mut(&mut sk_val);
         Ok((
             self.pub_keys.clone(),
-            DkgResult::new(pk_commitment.into(), sk),
+            Outcome::new(pk_commitment.into(), sk),
         ))
     }
 
@@ -740,8 +744,8 @@ impl<S: SecretId> KeyGen<S> {
     /// any and provable.
     pub fn possible_blockers(&self) -> BTreeSet<S::PublicId> {
         let mut result = BTreeSet::new();
-        match self.dkg_phase {
-            DkgPhases::Initialization => {
+        match self.phase {
+            Phase::Initialization => {
                 for (index, pk) in self.pub_keys.iter().enumerate() {
                     if !self
                         .initalization_accumulator
@@ -752,12 +756,12 @@ impl<S: SecretId> KeyGen<S> {
                     }
                 }
             }
-            DkgPhases::Contribution => result = self.contribution_accumulator.non_contributors(),
-            DkgPhases::Complaining => {
+            Phase::Contribution => result = self.contribution_accumulator.non_contributors(),
+            Phase::Complaining => {
                 // Non-voters shall already be returned within the error of the
                 // finalize_complaint_phase function call.
             }
-            DkgPhases::Justification | DkgPhases::Commitment => {
+            Phase::Justification | Phase::Commitment => {
                 // As there was Complaint phase being complated, it is exepcted all nodes involved
                 // in these two phases. Hence here a strict rule is undertaken that: any missing
                 // vote will be considered as a potential non-voter.
@@ -769,7 +773,7 @@ impl<S: SecretId> KeyGen<S> {
                     }
                 }
             }
-            DkgPhases::Finalization => {
+            Phase::Finalization => {
                 // Not blocking
             }
         }
@@ -864,7 +868,7 @@ impl<S: SecretId> KeyGen<S> {
         our_index: u64,
         pub_keys: BTreeSet<S::PublicId>,
         threshold: usize,
-        dkg_phase: DkgPhases,
+        phase: Phase,
     ) -> KeyGen<S> {
         assert!(pub_keys.len() >= threshold);
         KeyGen::<S> {
@@ -873,7 +877,7 @@ impl<S: SecretId> KeyGen<S> {
             pub_keys: pub_keys.clone(),
             parts: BTreeMap::new(),
             threshold,
-            dkg_phase,
+            phase,
             initalization_accumulator: InitializationAccumulator::new(),
             contribution_accumulator: ContributionAccumulator::new(pub_keys.clone()),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),

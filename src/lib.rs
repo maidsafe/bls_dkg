@@ -13,9 +13,6 @@
     test(attr(forbid(warnings)))
 )]
 
-#[macro_use]
-extern crate serde_derive;
-
 pub mod id;
 pub mod key_gen;
 

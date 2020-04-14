@@ -1,13 +1,15 @@
 // Copyright 2020 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
-// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied. Please review the Licences for the specific language governing
-// permissions and limitations relating to use of the SAFE Network Software.
+// This SAFE Network Software is licensed to you under the MIT license <LICENSE-MIT
+// https://opensource.org/licenses/MIT> or the Modified BSD license <LICENSE-BSD
+// https://opensource.org/licenses/BSD-3-Clause>, at your option. This file may not be copied,
+// modified, or distributed except according to those terms. Please review the Licences for the
+// specific language governing permissions and limitations relating to use of the SAFE Network
+// Software.
 
 use crate::id::{PublicId, SecretId};
 use rand::Rng;
+use serde_derive::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     collections::hash_map::DefaultHasher,
@@ -33,14 +35,6 @@ pub struct PeerId {
 
 impl PeerId {
     pub fn new(id: &str) -> Self {
-        NAMES
-            .iter()
-            .map(|name| PeerId::new_with_keypair(name))
-            .find(|peer| peer.id == id)
-            .unwrap_or_else(|| PeerId::new_with_keypair(id))
-    }
-
-    fn new_with_keypair(id: &str) -> Self {
         let (public_key, secret_key) = gen_keypair();
         Self {
             id: id.to_owned(),
