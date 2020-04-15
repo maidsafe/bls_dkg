@@ -8,6 +8,13 @@ on:
   pull_request:
     branches: [ master ]
 
+env:
+  # Run all cargo commands with --verbose.
+  CARGO_TERM_VERBOSE: true
+  RUST_BACKTRACE: 1
+  # Deny all compiler warnings.
+  RUSTFLAGS: "-D warnings"
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
