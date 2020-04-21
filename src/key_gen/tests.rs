@@ -260,6 +260,17 @@ fn threshold_signature() {
     // Test threshold signature verification for a combination of signatures
     let sig_combinations = sig_shares.iter().combinations(THRESHOLD + 1);
 
+    let deficient_sig_combinations = sig_shares.iter().combinations(THRESHOLD);
+
+    for combination in deficient_sig_combinations.clone() {
+        match pub_key_set.combine_signatures(combination) {
+            Ok(_) => {
+                panic!("Unexpected Success: Signatures cannot be aggregated with THRESHOLD shares")
+            }
+            Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
+        }
+    }
+
     for combination in sig_combinations.clone() {
         let sig = pub_key_set
             .combine_signatures(combination)
@@ -325,6 +336,21 @@ fn threshold_encrypt() {
         })
         .collect();
 
-    let decrypted = pub_key_set.decrypt(&dec_shares, &ciphertext).unwrap();
-    assert_eq!(msg, decrypted.as_slice());
+    // Test threshold encryption verification for a combination of shares - should pass as there
+    // are THRESHOLD + 1 shares aggregated in each combination
+    let dec_share_combinations = dec_shares.iter().combinations(THRESHOLD + 1);
+    for dec_share in dec_share_combinations {
+        let decrypted = pub_key_set.decrypt(dec_share, &ciphertext).unwrap();
+        assert_eq!(msg, decrypted.as_slice());
+    }
+
+    // Test threshold decryption for a combination of shares - shouldn't decrypt as there
+    // are THRESHOLD shares in each combination which are not enough to aggregate
+    let deficient_dec_share_combinations = dec_shares.iter().combinations(THRESHOLD);
+    for deficient_dec_share in deficient_dec_share_combinations {
+        match pub_key_set.decrypt(deficient_dec_share, &ciphertext) {
+            Ok(_) => panic!("Unexpected Success: Cannot decrypt by aggregating THRESHOLD shares"),
+            Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
+        }
+    }
 }
