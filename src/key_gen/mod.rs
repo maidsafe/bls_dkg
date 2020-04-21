@@ -276,7 +276,7 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
         let mut counts: BTreeMap<P, usize> = BTreeMap::new();
 
         for (target_id, accusers) in self.complaints.iter() {
-            if accusers.len() >= self.threshold {
+            if accusers.len() > self.pub_keys.len() - self.threshold {
                 let _ = invalid_peers.insert(target_id.clone());
                 for peer in self.pub_keys.iter() {
                     if !accusers.contains(peer) {
@@ -290,6 +290,7 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
                 let _ = invalid_peers.insert(peer);
             }
         }
+
         invalid_peers
     }
 }
@@ -599,8 +600,7 @@ impl<S: SecretId> KeyGen<S> {
         rng: &mut R,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
-
-        if failings.len() > self.pub_keys.len() - self.threshold {
+        if failings.len() >= self.pub_keys.len() - self.threshold {
             let mut result = BTreeSet::new();
             failings.iter().for_each(|pk| {
                 if let Some(index) = self.node_index(pk) {

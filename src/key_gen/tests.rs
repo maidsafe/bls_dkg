@@ -9,7 +9,7 @@
 
 use crate::dev_utils::{create_ids, PeerId};
 use crate::id::SecretId;
-use crate::key_gen::{message::Message, KeyGen, Phase};
+use crate::key_gen::{message::Message, Error, KeyGen, Phase};
 use bincode::serialize;
 use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +21,7 @@ const THRESHOLD: usize = 5;
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
     phase: Phase,
-    non_responsive: Option<usize>,
+    non_responsives: BTreeSet<u64>,
 ) -> (Vec<PeerId>, Vec<KeyGen<PeerId>>) {
     // Generate individual ids and key pairs.
     let peer_ids: Vec<PeerId> = create_ids(NODENUM);
@@ -71,7 +71,7 @@ fn setup_generators<R: RngCore>(
         &peer_ids,
         &mut generators,
         &mut proposals,
-        non_responsive,
+        non_responsives,
     );
 
     (peer_ids, generators)
@@ -82,10 +82,10 @@ fn messaging<R: RngCore>(
     peer_ids: &[PeerId],
     generators: &mut Vec<KeyGen<PeerId>>,
     proposals: &mut Vec<Message<PeerId>>,
-    non_responsive: Option<usize>,
+    non_responsives: BTreeSet<u64>,
 ) {
     // Keep broadcasting the proposals among the generators till no more.
-    // The proposal from non_responsive node shall be ignored.
+    // The proposal from non_responsives node shall be ignored.
     while !proposals.is_empty() {
         let proposals_local = std::mem::replace(proposals, Vec::new());
         for proposal in &proposals_local {
@@ -93,7 +93,7 @@ fn messaging<R: RngCore>(
                 if let Ok(proposal_vec) =
                     generator.handle_message(peer_ids[index].sec_key(), &mut rng, proposal.clone())
                 {
-                    if Some(index) != non_responsive {
+                    if !non_responsives.contains(&(index as u64)) {
                         proposal_vec
                             .iter()
                             .for_each(|prop| proposals.push(prop.clone()));
@@ -107,7 +107,7 @@ fn messaging<R: RngCore>(
 #[test]
 fn all_nodes_being_responsive() {
     let mut rng = rand::thread_rng();
-    let (_, mut generators) = setup_generators(&mut rng, Phase::Initialization, None);
+    let (_, mut generators) = setup_generators(&mut rng, Phase::Initialization, BTreeSet::new());
     // With all participants responding properly, the key generating procedure shall be completed
     // automatically. As when there is no complaint, Justification phase will be triggered directly.
     assert!(generators
@@ -116,11 +116,14 @@ fn all_nodes_being_responsive() {
 }
 
 #[test]
-fn having_one_non_responsive_node() {
+fn having_max_unresponsive_nodes_still_work() {
     let mut rng = rand::thread_rng();
-    let non_responsive = Some(0);
+    let mut non_responsives = BTreeSet::<u64>::new();
+    for i in 0..(NODENUM - THRESHOLD - 1) as u64 {
+        let _ = non_responsives.insert(i);
+    }
     let (peer_ids, mut generators) =
-        setup_generators(&mut rng, Phase::Initialization, non_responsive);
+        setup_generators(&mut rng, Phase::Initialization, non_responsives.clone());
 
     let mut proposals = Vec::new();
     // With one non_responsive node, Contribution phase cannot be completed automatically. This
@@ -132,7 +135,7 @@ fn having_one_non_responsive_node() {
             if let Ok(proposal_vec) =
                 generators[index].timed_phase_transition(&peer_id.sec_key(), &mut rng)
             {
-                if Some(index) != non_responsive {
+                if !non_responsives.contains(&(index as u64)) {
                     for proposal in proposal_vec {
                         proposals.push(proposal);
                     }
@@ -145,7 +148,7 @@ fn having_one_non_responsive_node() {
             &peer_ids,
             &mut generators,
             &mut proposals,
-            non_responsive,
+            non_responsives.clone(),
         );
         assert!(proposals.is_empty());
     }
@@ -154,11 +157,11 @@ fn having_one_non_responsive_node() {
         .iter_mut()
         .enumerate()
         .for_each(|(index, key_gen)| {
-            if Some(index) != non_responsive {
+            if !non_responsives.contains(&(index as u64)) {
                 assert!(key_gen.generate_keys().is_some());
-                assert!(!key_gen
-                    .pub_keys()
-                    .contains(&peer_ids[non_responsive.unwrap()]));
+                non_responsives.iter().for_each(|idx| {
+                    assert!(!key_gen.pub_keys().contains(&peer_ids[*idx as usize]))
+                });
             } else {
                 assert!(key_gen.generate_keys().is_none());
             }
@@ -166,9 +169,62 @@ fn having_one_non_responsive_node() {
 }
 
 #[test]
+fn having_min_unresponsive_nodes_cause_block() {
+    let mut rng = rand::thread_rng();
+    let mut non_responsives = BTreeSet::<u64>::new();
+    for i in 0..(NODENUM - THRESHOLD) as u64 {
+        let _ = non_responsives.insert(i);
+    }
+    let (peer_ids, mut generators) =
+        setup_generators(&mut rng, Phase::Initialization, non_responsives.clone());
+
+    // The `messaging` function only ignores the non-initial proposals from a non-responsive node.
+    // i.e. the Initialization phase will be completed and transits into Contribution.
+    // With more non-responsive nodes, `finalize_contributing_phase` returns with Complaints of
+    // non-contributors, and trigger the transition into Complaint phase. However, the Complaint
+    // phase will be blocked as cannot collect more than thresold votes.
+    // And the phase shall be blocked at Contribution.
+    let mut proposals = Vec::new();
+
+    // Trigger `finalize_contributing_phase` first, and exchange complaints
+    peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
+        if let Ok(proposal_vec) =
+            generators[index].timed_phase_transition(&peer_id.sec_key(), &mut rng)
+        {
+            if !non_responsives.contains(&(index as u64)) {
+                for proposal in proposal_vec {
+                    proposals.push(proposal);
+                }
+            }
+        }
+    });
+    messaging(
+        &mut rng,
+        &peer_ids,
+        &mut generators,
+        &mut proposals,
+        non_responsives.clone(),
+    );
+
+    // Then trigger `finalize_complaining_phase`, phase shall be blocked due to too many non-voters.
+    peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
+        if let Err(err) = generators[index].timed_phase_transition(&peer_id.sec_key(), &mut rng) {
+            assert_eq!(err, Error::TooManyNonVoters(non_responsives.clone()));
+        } else {
+            panic!("Node {:?} shall not progress anymore", peer_id);
+        }
+    });
+    // List already returned within the above call to `finalize_complaining_phase`. So here it
+    // returns an empty list.
+    generators
+        .iter()
+        .for_each(|generator| assert!(generator.possible_blockers().is_empty()));
+}
+
+#[test]
 fn threshold_signature() {
     let mut rng = rand::thread_rng();
-    let (_, generators) = setup_generators(&mut rng, Phase::Complaining, None);
+    let (_, generators) = setup_generators(&mut rng, Phase::Complaining, BTreeSet::new());
 
     // Compute the keys and threshold signature shares.
     let msg = "Help I'm trapped in a unit test factory";
@@ -228,7 +284,7 @@ fn threshold_signature() {
 #[test]
 fn threshold_encrypt() {
     let mut rng = rand::thread_rng();
-    let (_, generators) = setup_generators(&mut rng, Phase::Complaining, None);
+    let (_, generators) = setup_generators(&mut rng, Phase::Complaining, BTreeSet::new());
 
     // Compute the keys and decryption shares.
     let msg = "Help for threshold encryption unit test!".as_bytes();
