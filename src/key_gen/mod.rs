@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+mod encryptor;
 pub mod message;
 pub mod outcome;
 mod rng_adapter;
@@ -15,9 +16,10 @@ mod rng_adapter;
 mod tests;
 
 use crate::id::{PublicId, SecretId};
-use crate::key_gen::message::Message;
 use bincode::{self, deserialize, serialize};
+use encryptor::Encryptor;
 use err_derive;
+use message::Message;
 use outcome::Outcome;
 use rand::{self, RngCore};
 use serde_derive::{Deserialize, Serialize};
@@ -60,15 +62,17 @@ impl From<Box<bincode::ErrorKind>> for Error {
 }
 
 /// A contribution by a node for the key generation. It must to be sent to all participating
-/// nodes and handled by all of them, including the one that produced it.
+/// nodes and handled by all of them, it contains `receiver_index, serialised row for the receiver,
+/// encrypted rows from the sender`.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Part(BivarCommitment, Vec<Vec<u8>>);
+pub struct Part(u64, BivarCommitment, Vec<u8>, Vec<Vec<u8>>);
 
 impl Debug for Part {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Part")
-            .field(&format!("<degree {}>", self.0.degree()))
-            .field(&format!("<{} rows>", self.1.len()))
+            .field(&format!("<receiver {}>", &self.0))
+            .field(&format!("<degree {}>", self.1.degree()))
+            .field(&format!("<{} rows>", self.3.len()))
             .finish()
     }
 }
@@ -77,15 +81,17 @@ impl Debug for Part {
 /// all participating nodes and handled by all of them, including ourselves.
 ///
 /// The message is only produced after we verified our row against the commitment in the `Part`.
-/// For each node, it contains one encrypted value of that row.
+/// For each node, it contains `proposal_index, receiver_index, serialised value for the receiver,
+/// encrypted values from the sender`.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Commitment(u64, Vec<Vec<u8>>);
+pub struct Commitment(u64, u64, Vec<u8>, Vec<Vec<u8>>);
 
 impl Debug for Commitment {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Commitment")
-            .field(&self.0)
-            .field(&format!("<{} values>", self.1.len()))
+            .field(&format!("<proposer {}>", &self.0))
+            .field(&format!("<receiver {}>", &self.1))
+            .field(&format!("<{} values>", self.3.len()))
             .finish()
     }
 }
@@ -97,6 +103,8 @@ struct ProposalState {
     commitment: BivarCommitment,
     /// The verified values we received from `Commitment` messages.
     values: BTreeMap<u64, Fr>,
+    /// The encrypted values received from the proposor.
+    enc_values: Vec<Vec<u8>>,
     /// The nodes which have committed.
     commitments: BTreeSet<u64>,
 }
@@ -107,6 +115,7 @@ impl ProposalState {
         ProposalState {
             commitment,
             values: BTreeMap::new(),
+            enc_values: Vec::new(),
             commitments: BTreeSet::new(),
         }
     }
@@ -118,7 +127,8 @@ impl ProposalState {
 
 impl<'a> serde::Deserialize<'a> for ProposalState {
     fn deserialize<D: serde::Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
-        let (commitment, values, commitments) = serde::Deserialize::deserialize(deserializer)?;
+        let (commitment, values, enc_values, commitments) =
+            serde::Deserialize::deserialize(deserializer)?;
         let values: Vec<(u64, FieldWrap<Fr>)> = values;
         Ok(Self {
             commitment,
@@ -126,6 +136,7 @@ impl<'a> serde::Deserialize<'a> for ProposalState {
                 .into_iter()
                 .map(|(index, fr)| (index, fr.0))
                 .collect(),
+            enc_values,
             commitments,
         })
     }
@@ -316,6 +327,8 @@ pub struct KeyGen<S: SecretId> {
     our_index: u64,
     /// The public keys of all nodes, by node ID.
     pub_keys: BTreeSet<S::PublicId>,
+    /// Carry out encryption work during the DKG process.
+    encryptor: Encryptor<S::PublicId>,
     /// Proposed bivariate polynomials.
     parts: BTreeMap<u64, ProposalState>,
     /// The degree of the generated polynomial.
@@ -352,6 +365,7 @@ impl<S: SecretId> KeyGen<S> {
             our_id,
             our_index,
             pub_keys: pub_keys.clone(),
+            encryptor: Encryptor::new(&pub_keys),
             parts: BTreeMap::new(),
             threshold,
             phase: Phase::Initialization,
@@ -374,7 +388,6 @@ impl<S: SecretId> KeyGen<S> {
     /// Dispatching an incoming dkg message.
     pub fn handle_message<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
         msg: Message<S::PublicId>,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
@@ -384,23 +397,23 @@ impl<S: SecretId> KeyGen<S> {
                 m,
                 n,
                 member_list,
-            } => self.handle_initialization(sec_key, rng, m, n, key_gen_id, member_list),
+            } => self.handle_initialization(rng, m, n, key_gen_id, member_list),
             Message::Contribution { key_gen_id, part } => {
-                self.handle_contribution(sec_key, rng, key_gen_id, part)
+                self.handle_contribution(rng, key_gen_id, part)
             }
             Message::Complaint {
                 key_gen_id,
                 target,
                 msg,
-            } => self.handle_complaint(sec_key, key_gen_id, target, msg),
+            } => self.handle_complaint(key_gen_id, target, msg),
             Message::Justification { key_gen_id, part } => {
-                self.handle_justification(sec_key, key_gen_id, part)
+                self.handle_justification(key_gen_id, part)
             }
             Message::Commitment {
                 key_gen_id,
                 commitment,
             } => {
-                if let Err(err) = self.handle_commitment(sec_key, key_gen_id, commitment) {
+                if let Err(err) = self.handle_commitment(key_gen_id, commitment) {
                     Err(err)
                 } else {
                     Ok(Vec::new())
@@ -413,7 +426,6 @@ impl<S: SecretId> KeyGen<S> {
     // agreement reached, and the message should be multicast to all nodes.
     fn handle_initialization<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
         m: usize,
         n: usize,
@@ -440,9 +452,7 @@ impl<S: SecretId> KeyGen<S> {
             let commitment = our_part.commitment();
             let encrypt = |(i, pk): (usize, &S::PublicId)| {
                 let row = our_part.row(i + 1);
-                sec_key
-                    .encrypt(pk, &serialize(&row)?)
-                    .ok_or(Error::Encryption)
+                self.encryptor.encrypt(pk, &serialize(&row)?)
             };
             let rows = self
                 .pub_keys
@@ -450,12 +460,18 @@ impl<S: SecretId> KeyGen<S> {
                 .enumerate()
                 .map(encrypt)
                 .collect::<Result<Vec<_>, Error>>()?;
-
-            let mut result = Vec::new();
-            result.push(Message::Contribution {
-                key_gen_id: self.our_index,
-                part: Part(commitment, rows),
-            });
+            let result = self
+                .pub_keys
+                .iter()
+                .enumerate()
+                .map(|(idx, _pk)| {
+                    let ser_row = serialize(&our_part.row(idx + 1))?;
+                    Ok(Message::Contribution {
+                        key_gen_id: self.our_index,
+                        part: Part(idx as u64, commitment.clone(), ser_row, rows.clone()),
+                    })
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
             return Ok(result);
         }
         Ok(Vec::new())
@@ -466,7 +482,6 @@ impl<S: SecretId> KeyGen<S> {
     // If all contributed, returns a `Commitment` message to be broadcast.
     fn handle_contribution<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
         sender_index: u64,
         part: Part,
@@ -486,7 +501,7 @@ impl<S: SecretId> KeyGen<S> {
             .contribution_accumulator
             .add_contribution(sender_id, sender_index, part)
         {
-            self.finalize_contributing_phase(sec_key, rng)
+            self.finalize_contributing_phase(rng)
         } else {
             Ok(Vec::new())
         }
@@ -498,12 +513,11 @@ impl<S: SecretId> KeyGen<S> {
     //       May need to be further verified whether there is a better approach.
     pub fn timed_phase_transition<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         match self.phase {
-            Phase::Contribution => self.finalize_contributing_phase(sec_key, rng),
-            Phase::Complaining => self.finalize_complaining_phase(sec_key, rng),
+            Phase::Contribution => self.finalize_contributing_phase(rng),
+            Phase::Complaining => self.finalize_complaining_phase(rng),
             Phase::Initialization => Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
                 actual: self.phase,
@@ -519,7 +533,6 @@ impl<S: SecretId> KeyGen<S> {
 
     fn finalize_contributing_phase<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         self.phase = Phase::Complaining;
@@ -528,7 +541,7 @@ impl<S: SecretId> KeyGen<S> {
         let mut contributors = BTreeSet::new();
         for ((sender_id, sender_index), part) in self.contribution_accumulator.contributions.clone()
         {
-            match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part.clone()) {
+            match self.handle_part_or_fault(sender_index, part.clone()) {
                 Ok(Some(_row)) => {}
                 Ok(None) => {}
                 Err(_fault) => {
@@ -561,7 +574,7 @@ impl<S: SecretId> KeyGen<S> {
         // In case of no complaints, calling finalize_complaining_phase to transit into
         // `Justification` phase.
         if msgs.is_empty() {
-            self.finalize_complaining_phase(sec_key, rng)
+            self.finalize_complaining_phase(rng)
         } else {
             Ok(msgs)
         }
@@ -570,7 +583,6 @@ impl<S: SecretId> KeyGen<S> {
     // Handles a `Complaint` message.
     fn handle_complaint(
         &mut self,
-        _sec_key: &S,
         sender_index: u64,
         target_index: u64,
         invalid_msg: Vec<u8>,
@@ -596,7 +608,6 @@ impl<S: SecretId> KeyGen<S> {
 
     fn finalize_complaining_phase<R: RngCore>(
         &mut self,
-        sec_key: &S,
         rng: &mut R,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
@@ -625,9 +636,7 @@ impl<S: SecretId> KeyGen<S> {
         let justify = our_part.commitment();
         let encrypt = |(i, pk): (usize, &S::PublicId)| {
             let row = our_part.row(i + 1);
-            sec_key
-                .encrypt(pk, &serialize(&row)?)
-                .ok_or(Error::Encryption)
+            self.encryptor.encrypt(pk, &serialize(&row)?)
         };
         let rows = self
             .pub_keys
@@ -635,18 +644,26 @@ impl<S: SecretId> KeyGen<S> {
             .enumerate()
             .map(encrypt)
             .collect::<Result<Vec<_>, Error>>()?;
-        let mut result = Vec::new();
-        result.push(Message::Justification {
-            key_gen_id: self.our_index,
-            part: Part(justify, rows),
-        });
+
+        let result = self
+            .pub_keys
+            .iter()
+            .enumerate()
+            .map(|(idx, _pk)| {
+                let ser_row = serialize(&our_part.row(idx + 1))?;
+                Ok(Message::Justification {
+                    key_gen_id: self.our_index,
+                    part: Part(idx as u64, justify.clone(), ser_row, rows.clone()),
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
         Ok(result)
     }
 
     // Handles a `Justification` message.
     fn handle_justification(
         &mut self,
-        sec_key: &S,
         sender_index: u64,
         part: Part,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
@@ -660,7 +677,7 @@ impl<S: SecretId> KeyGen<S> {
         let sender_id = self
             .node_id_from_index(sender_index)
             .ok_or(Error::UnknownSender)?;
-        let row = match self.handle_part_or_fault(sec_key, sender_index, &sender_id, part) {
+        let row = match self.handle_part_or_fault(sender_index, part) {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(Vec::new()),
             Err(_fault) => {
@@ -669,19 +686,30 @@ impl<S: SecretId> KeyGen<S> {
                 return Ok(Vec::new());
             }
         };
-        // The row is valid. Encrypt one value for each node and broadcast a `Commitment`.
+        // The row is valid. Encrypt one value for each node and broadcast `Commitment`.
         let mut values = Vec::new();
+        let mut enc_values = Vec::new();
         for (index, pk) in self.pub_keys.iter().enumerate() {
             let val = row.evaluate(index + 1);
             let ser_val = serialize(&FieldWrap(val))?;
-            values.push(sec_key.encrypt(pk, ser_val).ok_or(Error::Encryption)?);
+            enc_values.push(self.encryptor.encrypt(pk, &ser_val)?);
+            values.push(ser_val);
         }
 
-        let mut result = Vec::new();
-        result.push(Message::Commitment {
-            key_gen_id: self.our_index,
-            commitment: Commitment(sender_index, values),
-        });
+        let result = self
+            .pub_keys
+            .iter()
+            .enumerate()
+            .map(|(idx, _pk)| Message::Commitment {
+                key_gen_id: self.our_index,
+                commitment: Commitment(
+                    sender_index,
+                    idx as u64,
+                    values[idx].clone(),
+                    enc_values.clone(),
+                ),
+            })
+            .collect();
 
         if self.parts.len() == self.pub_keys.len() {
             self.phase = Phase::Commitment;
@@ -693,7 +721,6 @@ impl<S: SecretId> KeyGen<S> {
     // Handles a `Commitment` message.
     fn handle_commitment(
         &mut self,
-        sec_key: &S,
         sender_index: u64,
         commitment: Commitment,
     ) -> Result<CommitmentOutcome, Error> {
@@ -704,12 +731,8 @@ impl<S: SecretId> KeyGen<S> {
             });
         }
 
-        let sender_id = self
-            .node_id_from_index(sender_index)
-            .ok_or(Error::UnknownSender)?;
-
         Ok(
-            match self.handle_commitment_or_fault(sec_key, &sender_id, sender_index, commitment) {
+            match self.handle_commitment_or_fault(sender_index, commitment) {
                 Ok(()) => {
                     if self.is_ready() {
                         self.phase = Phase::Finalization;
@@ -818,13 +841,14 @@ impl<S: SecretId> KeyGen<S> {
     /// Handles a `Part`, returns a `PartFault` if it is invalid.
     fn handle_part_or_fault(
         &mut self,
-        sec_key: &S,
         sender_index: u64,
-        sender_id: &S::PublicId,
-        Part(commitment, rows): Part,
+        Part(receiver_index, commitment, ser_row, rows): Part,
     ) -> Result<Option<Poly>, PartFault> {
         if rows.len() != self.pub_keys.len() {
             return Err(PartFault::RowCount);
+        }
+        if receiver_index != self.our_index {
+            return Ok(None);
         }
         if let Some(state) = self.parts.get(&sender_index) {
             if state.commitment != commitment {
@@ -837,10 +861,7 @@ impl<S: SecretId> KeyGen<S> {
         let _ = self
             .parts
             .insert(sender_index, ProposalState::new(commitment));
-        // We are a validator: Decrypt and deserialize our row and compare it to the commitment.
-        let ser_row = sec_key
-            .decrypt(sender_id, &rows[self.our_index as usize])
-            .ok_or(PartFault::DecryptRow)?;
+
         let row: Poly = deserialize(&ser_row).map_err(|_| PartFault::DeserializeRow)?;
         if row.commitment() != commitment_row {
             return Err(PartFault::RowCommitment);
@@ -851,33 +872,43 @@ impl<S: SecretId> KeyGen<S> {
     /// Handles a `Commitment` message.
     fn handle_commitment_or_fault(
         &mut self,
-        sec_key: &S,
-        sender_id: &S::PublicId,
         sender_index: u64,
-        Commitment(proposer_index, values): Commitment,
+        Commitment(proposer_index, receiver_index, ser_val, values): Commitment,
     ) -> Result<(), CommitmentFault> {
         if values.len() != self.pub_keys.len() {
             return Err(CommitmentFault::ValueCount);
         }
-        let part = self
-            .parts
-            .get_mut(&proposer_index)
-            .ok_or(CommitmentFault::MissingPart)?;
-        if !part.commitments.insert(sender_index) {
-            return Ok(()); // We already handled this `Commitment` before.
+        if receiver_index != self.our_index {
+            return Ok(());
         }
-        let our_index = self.our_index;
-        // We are a validator: Decrypt and deserialize our value and compare it to the commitment.
-        let ser_val = sec_key
-            .decrypt(sender_id, &values[our_index as usize])
-            .ok_or(CommitmentFault::DecryptValue)?;
-        let val = deserialize::<FieldWrap<Fr>>(&ser_val)
-            .map_err(|_| CommitmentFault::DeserializeValue)?
-            .into_inner();
-        if part.commitment.evaluate(our_index + 1, sender_index + 1) != G1Affine::one().mul(val) {
-            return Err(CommitmentFault::ValueCommitment);
+        {
+            let part = self
+                .parts
+                .get_mut(&proposer_index)
+                .ok_or(CommitmentFault::MissingPart)?;
+            if !part.commitments.insert(sender_index) {
+                return Ok(()); // We already handled this `Commitment` before.
+            }
+            let our_index = self.our_index;
+
+            let val = deserialize::<FieldWrap<Fr>>(&ser_val)
+                .map_err(|_| CommitmentFault::DeserializeValue)?
+                .into_inner();
+            if part.commitment.evaluate(our_index + 1, sender_index + 1) != G1Affine::one().mul(val)
+            {
+                return Err(CommitmentFault::ValueCommitment);
+            }
+            let _ = part.values.insert(sender_index + 1, val);
         }
-        let _ = part.values.insert(sender_index + 1, val);
+
+        {
+            let part = self
+                .parts
+                .get_mut(&sender_index)
+                .ok_or(CommitmentFault::MissingPart)?;
+            part.enc_values = values;
+        }
+
         Ok(())
     }
 }
@@ -910,6 +941,7 @@ impl<S: SecretId> KeyGen<S> {
             our_id,
             our_index,
             pub_keys: pub_keys.clone(),
+            encryptor: Encryptor::new(&pub_keys),
             parts: BTreeMap::new(),
             threshold,
             phase,

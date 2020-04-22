@@ -101,16 +101,14 @@ impl SecretId for PeerId {
         &self
     }
 
-    fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
-        // Pass through: We cannot store encryption keys as they are not reproductible.
-        // This code is only used for test.
-        Some(msg.as_ref().to_vec())
+    fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, _msg: M) -> Option<Vec<u8>> {
+        // Pass through: Not being actually used within the crate.
+        None
     }
 
-    fn decrypt(&self, _from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>> {
-        // Pass through: We cannot store encryption keys as they are not reproductible.
-        // This code is only used for test.
-        Some(ct.to_vec())
+    fn decrypt(&self, _from: &Self::PublicId, _ct: &[u8]) -> Option<Vec<u8>> {
+        // Pass through: Not being actually used within the crate.
+        None
     }
 }
 
