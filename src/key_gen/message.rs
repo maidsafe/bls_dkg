@@ -7,10 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{Commitment, Part};
+use super::encryptor::{Iv, Key};
+use super::{Acknowledgment, Part};
 use crate::id::PublicId;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// Messages used for running BLS DKG.
@@ -23,7 +24,7 @@ pub enum Message<P: PublicId> {
         n: usize,
         member_list: BTreeSet<P>,
     },
-    Contribution {
+    Proposal {
         key_gen_id: u64,
         part: Part,
     },
@@ -34,11 +35,11 @@ pub enum Message<P: PublicId> {
     },
     Justification {
         key_gen_id: u64,
-        part: Part,
+        keys_map: BTreeMap<P, (Key, Iv)>,
     },
-    Commitment {
+    Acknowledgment {
         key_gen_id: u64,
-        commitment: Commitment,
+        ack: Acknowledgment,
     },
 }
 
@@ -48,15 +49,13 @@ impl<P: PublicId> fmt::Debug for Message<P> {
             Message::Initialization { key_gen_id, .. } => {
                 write!(formatter, "Initialization({})", key_gen_id)
             }
-            Message::Contribution { key_gen_id, .. } => {
-                write!(formatter, "Contribution({})", key_gen_id)
-            }
+            Message::Proposal { key_gen_id, .. } => write!(formatter, "Proposal({})", key_gen_id),
             Message::Complaint { key_gen_id, .. } => write!(formatter, "Complaint({})", key_gen_id),
             Message::Justification { key_gen_id, .. } => {
                 write!(formatter, "Justification({})", key_gen_id)
             }
-            Message::Commitment { key_gen_id, .. } => {
-                write!(formatter, "Commitment({})", key_gen_id)
+            Message::Acknowledgment { key_gen_id, .. } => {
+                write!(formatter, "Acknowledgment({})", key_gen_id)
             }
         }
     }

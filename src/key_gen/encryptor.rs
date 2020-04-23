@@ -13,6 +13,7 @@ use aes::Aes128;
 use block_modes::block_padding::Pkcs7;
 use block_modes::{BlockMode, Cbc};
 use rand::Rng;
+use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 type Aes128Cbc = Cbc<Aes128, Pkcs7>;
@@ -20,7 +21,10 @@ type Aes128Cbc = Cbc<Aes128, Pkcs7>;
 const KEY_SIZE: usize = 16;
 const IV_SIZE: usize = 16;
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Key(pub [u8; KEY_SIZE]);
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Iv(pub [u8; IV_SIZE]);
 
 fn encrypt(data: &[u8], key: &Key, iv: &Iv) -> Result<Vec<u8>, Error> {
@@ -62,6 +66,10 @@ impl<P: PublicId> Encryptor<P> {
         } else {
             Err(Error::Encryption)
         }
+    }
+
+    pub fn keys_map(&self) -> BTreeMap<P, (Key, Iv)> {
+        self.keys_map.clone()
     }
 
     // pub fn decrypt(&self, from: &P, ct: &[u8]) -> Result<Vec<u8>, Error> {

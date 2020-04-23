@@ -93,7 +93,7 @@ fn having_max_unresponsive_nodes_still_work() {
     let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone());
 
     let mut proposals = Vec::new();
-    // With one non_responsive node, Contribution phase cannot be completed automatically. This
+    // With one non_responsive node, Proposal phase cannot be completed automatically. This
     // requires finalize_contributing_phase to be called externally to complete the procedure.
     // All participants will transit into Complaint phase afterwards, Then requires
     // finalize_complaining_phase to be called externally to complete the procedure.
@@ -142,11 +142,11 @@ fn having_min_unresponsive_nodes_cause_block() {
     let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone());
 
     // The `messaging` function only ignores the non-initial proposals from a non-responsive node.
-    // i.e. the Initialization phase will be completed and transits into Contribution.
+    // i.e. the Initialization phase will be completed and transits into Proposal.
     // With more non-responsive nodes, `finalize_contributing_phase` returns with Complaints of
     // non-contributors, and trigger the transition into Complaint phase. However, the Complaint
     // phase will be blocked as cannot collect more than thresold votes.
-    // And the phase shall be blocked at Contribution.
+    // And the phase shall be blocked at Proposal.
     let mut proposals = Vec::new();
 
     // Trigger `finalize_contributing_phase` first, and exchange complaints
