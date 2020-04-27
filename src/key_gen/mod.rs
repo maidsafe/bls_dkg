@@ -18,7 +18,6 @@ mod tests;
 use crate::id::{PublicId, SecretId};
 use bincode::{self, deserialize, serialize};
 use encryptor::{Encryptor, Iv, Key};
-use err_derive;
 use message::Message;
 use outcome::Outcome;
 use rand::{self, RngCore};
@@ -64,18 +63,25 @@ impl From<Box<bincode::ErrorKind>> for Error {
     }
 }
 
-/// A contribution by a node for the key generation. It must to be sent to all participating
-/// nodes and handled by all of them, it contains `receiver_index, serialised row for the receiver,
-/// encrypted rows from the sender`.
+/// A contribution by a node for the key generation. The part shall only be handled by the receiver.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Part(u64, BivarCommitment, Vec<u8>, Vec<Vec<u8>>);
+pub struct Part {
+    // Index of the peer that expected to receive this Part.
+    receiver: u64,
+    // Our poly-commitment.
+    commitment: BivarCommitment,
+    // serialized row for the receiver.
+    ser_row: Vec<u8>,
+    // Encrypted rows from the sender.
+    enc_rows: Vec<Vec<u8>>,
+}
 
 impl Debug for Part {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Part")
-            .field(&format!("<receiver {}>", &self.0))
-            .field(&format!("<degree {}>", self.1.degree()))
-            .field(&format!("<{} rows>", self.3.len()))
+            .field(&format!("<receiver {}>", &self.receiver))
+            .field(&format!("<degree {}>", self.commitment.degree()))
+            .field(&format!("<{} rows>", self.enc_rows.len()))
             .finish()
     }
 }
@@ -419,7 +425,12 @@ impl<S: SecretId> KeyGen<S> {
                     let ser_row = serialize(&our_part.row(idx + 1))?;
                     Ok(Message::Proposal {
                         key_gen_id: self.our_index,
-                        part: Part(idx as u64, ack.clone(), ser_row, rows.clone()),
+                        part: Part {
+                            receiver: idx as u64,
+                            commitment: ack.clone(),
+                            ser_row,
+                            enc_rows: rows.clone(),
+                        },
                     })
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -688,7 +699,12 @@ impl<S: SecretId> KeyGen<S> {
             if let Ok(ser_row) = serialize(&our_part.row(idx + 1)) {
                 result.push(Message::Proposal {
                     key_gen_id: self.our_index,
-                    part: Part(idx as u64, justify.clone(), ser_row, rows.clone()),
+                    part: Part {
+                        receiver: idx as u64,
+                        commitment: justify.clone(),
+                        ser_row,
+                        enc_rows: rows.clone(),
+                    },
                 });
             }
         });
@@ -804,12 +820,17 @@ impl<S: SecretId> KeyGen<S> {
     fn handle_part_or_fault(
         &mut self,
         sender_index: u64,
-        Part(receiver_index, commitment, ser_row, rows): Part,
+        Part {
+            receiver,
+            commitment,
+            ser_row,
+            enc_rows,
+        }: Part,
     ) -> Result<Option<Poly>, PartFault> {
-        if rows.len() != self.pub_keys.len() {
+        if enc_rows.len() != self.pub_keys.len() {
             return Err(PartFault::RowCount);
         }
-        if receiver_index != self.our_index {
+        if receiver != self.our_index {
             return Ok(None);
         }
         if let Some(state) = self.parts.get(&sender_index) {

@@ -100,16 +100,6 @@ impl SecretId for PeerId {
     fn public_id(&self) -> &Self::PublicId {
         &self
     }
-
-    fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, _msg: M) -> Option<Vec<u8>> {
-        // Pass through: Not being actually used within the crate.
-        None
-    }
-
-    fn decrypt(&self, _from: &Self::PublicId, _ct: &[u8]) -> Option<Vec<u8>> {
-        // Pass through: Not being actually used within the crate.
-        None
-    }
 }
 
 /// **NOT FOR PRODUCTION USE**: Returns a collection of mock node IDs with human-readable names.
