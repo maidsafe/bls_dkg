@@ -100,18 +100,6 @@ impl SecretId for PeerId {
     fn public_id(&self) -> &Self::PublicId {
         &self
     }
-
-    fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
-        // Pass through: We cannot store encryption keys as they are not reproductible.
-        // This code is only used for test.
-        Some(msg.as_ref().to_vec())
-    }
-
-    fn decrypt(&self, _from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>> {
-        // Pass through: We cannot store encryption keys as they are not reproductible.
-        // This code is only used for test.
-        Some(ct.to_vec())
-    }
 }
 
 /// **NOT FOR PRODUCTION USE**: Returns a collection of mock node IDs with human-readable names.

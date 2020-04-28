@@ -27,9 +27,4 @@ pub trait SecretId {
 
     /// Returns the associated public identity.
     fn public_id(&self) -> &Self::PublicId;
-
-    /// Encrypts the message using own Rng to `to`
-    fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, msg: M) -> Option<Vec<u8>>;
-    /// Decrypt message from `from`.
-    fn decrypt(&self, from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>>;
 }
