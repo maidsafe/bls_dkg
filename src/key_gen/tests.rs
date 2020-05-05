@@ -15,8 +15,8 @@ use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Alter the configure of the number of nodes and the threshold.
-const NODENUM: usize = 7;
-const THRESHOLD: usize = 5;
+const NODENUM: usize = 3;
+const THRESHOLD: usize = 2;
 
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
@@ -201,12 +201,15 @@ fn threshold_signature() {
     let (_, generators) = setup_generators(&mut rng, BTreeSet::new());
 
     // Compute the keys and threshold signature shares.
-    let msg = "Help I'm trapped in a unit test factory";
-    let pub_key_set = generators[0]
+    let msg = "Hello from the group!";
+
+    let outcome = generators[0]
         .generate_keys()
         .expect("Failed to generate `PublicKeySet` for node #0")
-        .1
-        .public_key_set;
+        .1;
+
+    let pub_key_set = outcome.public_key_set;
+
     let sig_shares: BTreeMap<_, _> = generators
         .iter()
         .enumerate()
@@ -274,6 +277,7 @@ fn threshold_encrypt() {
 
     // Compute the keys and decryption shares.
     let msg = "Help for threshold encryption unit test!".as_bytes();
+
     let pub_key_set = generators[0]
         .generate_keys()
         .expect("Failed to generate `PublicKeySet` for node #0")
@@ -298,9 +302,7 @@ fn threshold_encrypt() {
             let sk = outcome.secret_key_share;
             let pks = outcome.public_key_set;
             assert_eq!(pks, pub_key_set);
-
             let dec_share = sk.decrypt_share(&ciphertext).unwrap();
-
             assert!(pks
                 .public_key_share(idx)
                 .verify_decryption_share(&dec_share, &ciphertext));
@@ -308,7 +310,6 @@ fn threshold_encrypt() {
             (idx, dec_share)
         })
         .collect();
-
     // Test threshold encryption verification for a combination of shares - should pass as there
     // are THRESHOLD + 1 shares aggregated in each combination
     let dec_share_combinations = dec_shares.iter().combinations(THRESHOLD + 1);

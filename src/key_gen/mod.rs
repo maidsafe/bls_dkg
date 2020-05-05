@@ -355,6 +355,10 @@ impl<S: SecretId> KeyGen<S> {
         ))
     }
 
+    pub fn phase(&self) -> Phase {
+        self.phase.clone()
+    }
+
     /// Dispatching an incoming dkg message.
     pub fn handle_message<R: RngCore>(
         &mut self,
@@ -542,7 +546,7 @@ impl<S: SecretId> KeyGen<S> {
         Ok(Vec::new())
     }
 
-    fn all_contribution_received(&self) -> bool {
+    pub fn all_contribution_received(&self) -> bool {
         self.pub_keys.len() == self.parts.len()
             && self
                 .parts
@@ -753,7 +757,7 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Returns `true` if enough parts are complete to safely generate the new key.
-    fn is_ready(&self) -> bool {
+    pub fn is_ready(&self) -> bool {
         self.complete_parts_count() >= self.threshold
     }
 
