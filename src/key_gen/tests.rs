@@ -7,11 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::dev_utils::{create_ids, PeerId};
+use crate::dev_utils::{create_ids, PeerId, NAMES};
 use crate::key_gen::{message::Message, Error, KeyGen};
 use bincode::serialize;
 use itertools::Itertools;
-use rand::RngCore;
+use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Alter the configure of the number of nodes and the threshold.
@@ -22,8 +22,22 @@ fn setup_generators<R: RngCore>(
     mut rng: &mut R,
     non_responsives: BTreeSet<u64>,
 ) -> (Vec<PeerId>, Vec<KeyGen<PeerId>>) {
-    // Generate individual ids and key pairs.
+    // Generate individual ids.
     let peer_ids: Vec<PeerId> = create_ids(NODENUM);
+
+    (
+        peer_ids.clone(),
+        create_generators(&mut rng, non_responsives, &peer_ids, THRESHOLD),
+    )
+}
+
+fn create_generators<R: RngCore>(
+    mut rng: &mut R,
+    non_responsives: BTreeSet<u64>,
+    peer_ids: &[PeerId],
+    threshold: usize,
+) -> Vec<KeyGen<PeerId>> {
+    // Generate individual key pairs.
     let pub_keys: BTreeSet<PeerId> = peer_ids.iter().cloned().collect();
 
     // Create the `KeyGen` instances
@@ -32,7 +46,7 @@ fn setup_generators<R: RngCore>(
     peer_ids.iter().for_each(|peer_id| {
         let key_gen = {
             let (key_gen, proposal) =
-                KeyGen::<PeerId>::initialize(&peer_id.sec_key(), THRESHOLD, pub_keys.clone())
+                KeyGen::<PeerId>::initialize(&peer_id.sec_key(), threshold, pub_keys.clone())
                     .unwrap_or_else(|err| {
                         panic!("Failed to initialize KeyGen of {:?} {:?}", &peer_id, err)
                     });
@@ -45,7 +59,7 @@ fn setup_generators<R: RngCore>(
 
     messaging(&mut rng, &mut generators, &mut proposals, non_responsives);
 
-    (peer_ids, generators)
+    generators
 }
 
 fn messaging<R: RngCore>(
@@ -311,5 +325,31 @@ fn threshold_encrypt() {
             Ok(_) => panic!("Unexpected Success: Cannot decrypt by aggregating THRESHOLD shares"),
             Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
         }
+    }
+}
+
+#[test]
+fn network_churning() {
+    let mut rng = rand::thread_rng();
+
+    let initial_num = 3;
+    let mut peer_ids = create_ids(initial_num);
+
+    let mut naming_index = initial_num;
+
+    while naming_index < 15 {
+        if peer_ids.len() < NODENUM || rng.gen() {
+            peer_ids.push(PeerId::new(NAMES[naming_index]));
+            naming_index += 1;
+        } else {
+            let _ = peer_ids.remove(rng.gen_range(0, peer_ids.len()));
+        }
+
+        let threshold: usize = peer_ids.len() * 2 / 3;
+        let mut generators = create_generators(&mut rng, BTreeSet::new(), &peer_ids, threshold);
+
+        assert!(generators
+            .iter_mut()
+            .all(|key_gen| key_gen.generate_keys().is_some()));
     }
 }
