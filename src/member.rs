@@ -104,10 +104,8 @@ impl Member {
             map
         });
 
-        for (peer1, status1) in connected {
-            if !inner_locked.connected.contains_key(&peer1) {
-                let _ = inner_locked.connected.insert(peer1, status1);
-            }
+        for (peer, status) in connected {
+            let _ = inner_locked.connected.entry(peer).or_insert(status);
         }
 
         // Extract public_keys of the nodes from the given group for DKG
@@ -205,10 +203,6 @@ impl PartialEq for Member {
     fn eq(&self, other: &Self) -> bool {
         self.inner.lock().unwrap().eq(&other.inner.lock().unwrap())
     }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.inner.lock().unwrap().ne(&other.inner.lock().unwrap())
-    }
 }
 
 impl PartialOrd for Member {
@@ -286,6 +280,12 @@ impl SecretId for KeyInfo {
     }
 }
 
+impl Default for KeyInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct Inner {
     quic_p2p: QuicP2p,
     id: u64,
@@ -298,10 +298,6 @@ struct Inner {
 impl PartialEq for Inner {
     fn eq(&self, other: &Self) -> bool {
         self.our_keys.public_id().eq(other.our_keys.public_id())
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.our_keys.public_id().ne(other.our_keys.public_id())
     }
 }
 
@@ -344,7 +340,7 @@ impl Inner {
     // Updates the connected list if successfully connected at the transport layer
     pub fn handle_connected_to(&mut self, peer: Peer) {
         trace!("Connected to Peer: {:?}", peer);
-        let _ = self.connected.insert(peer.clone(), true);
+        let _ = self.connected.insert(peer, true);
     }
 
     // Checks if we are connected to all the nodes in the group
@@ -390,13 +386,11 @@ impl Inner {
     fn start_timed_phase_trasition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
         let tick = periodic_ms(10_000); // 10 seconds
 
-        loop {
-            tick.recv().unwrap();
-            let mut rng = thread_rng();
-            return match self.key_gen {
-                Some(ref mut key_gen) => key_gen.timed_phase_transition(&mut rng),
-                None => Err(Error::QuicP2P("Keygen instance not found".to_string())),
-            };
+        tick.recv().unwrap();
+        let mut rng = thread_rng();
+        match self.key_gen {
+            Some(ref mut key_gen) => key_gen.timed_phase_transition(&mut rng),
+            None => Err(Error::QuicP2P("Keygen instance not found".to_string())),
         }
     }
 

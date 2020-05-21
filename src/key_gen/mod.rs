@@ -356,7 +356,7 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     pub fn phase(&self) -> Phase {
-        self.phase.clone()
+        self.phase
     }
 
     /// Dispatching an incoming dkg message.
