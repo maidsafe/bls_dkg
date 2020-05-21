@@ -8,8 +8,9 @@
 // Software.
 
 #[cfg(test)]
-mod tests {
+mod test {
     use crate::key_gen::Phase;
+    use crate::member::NodeID;
     use crate::Member;
     use bincode::serialize;
     use itertools::Itertools;
@@ -23,7 +24,7 @@ mod tests {
     pub const NODE_NUM: usize = 7;
     pub const THRESHOLD: usize = 6;
 
-    fn setup_members_and_init_dkg(non_responsives: BTreeSet<usize>) -> Vec<Member> {
+    fn setup_members_and_init_dkg(non_responsives: BTreeSet<usize>) -> (Vec<NodeID>, Vec<Member>) {
         let mut node_id_vec = vec![];
         let mut config_vec = vec![];
         let mut socket_addr_vec = vec![];
@@ -59,8 +60,8 @@ mod tests {
         }
 
         // Initialize DKG for all the Nodes
-        for x in 0..NODE_NUM {
-            let proposal = members[x].init_dkg(map.clone(), THRESHOLD).unwrap();
+        for member in members.iter_mut().take(NODE_NUM) {
+            let proposal = member.init_dkg(map.clone(), THRESHOLD).unwrap();
             proposals.push(proposal.clone());
             std::thread::sleep(Duration::from_secs(5));
         }
@@ -68,34 +69,43 @@ mod tests {
         // Broadcast all the messages simultaneously via multi-threading
         for x in 0..NODE_NUM {
             if !non_responsives.contains(&x) {
-                while members[x].if_connected_to_all() {
+                // Could get delayed during connecting in real-network - keep trying in a loop
+                let mut connected = members[x].if_connected_to_all();
+                if connected {
                     members[x].broadcast(proposals[x].clone()).unwrap();
-                    break;
+                } else {
+                    while !connected {
+                        connected = members[x].if_connected_to_all();
+                        if connected {
+                            members[x].broadcast(proposals[x].clone()).unwrap();
+                            break;
+                        }
+                    }
                 }
             }
         }
 
         // Wait for the Quic threads to finish the DKG process - should be increased if NODENUM is increased
-        sleep(Duration::from_secs(90));
+        sleep(Duration::from_secs(180));
 
-        members
+        (node_id_vec, members)
     }
 
     #[test]
     fn member_test() {
-        let members = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(Default::default());
 
         // Check for Phases, Contributions and Readiness
-        for x in 0..NODE_NUM {
-            assert!(members[x].all_contribution_received().unwrap());
-            assert_eq!(Phase::Finalization, members[x].phase().unwrap());
-            assert!(members[x].is_ready().unwrap());
+        for member in members.iter_mut().take(NODE_NUM) {
+            assert!(member.all_contribution_received().unwrap());
+            assert_eq!(Phase::Finalization, member.phase().unwrap());
+            assert!(member.is_ready().unwrap());
         }
     }
 
     #[test]
     fn threshold_sign_online() {
-        let mut members = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(Default::default());
 
         let outcome = members[0]
             .generate_keys()
@@ -167,7 +177,7 @@ mod tests {
 
     #[test]
     fn threshold_encrypt_online() {
-        let mut members = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(Default::default());
 
         let pub_key_set = members[0]
             .generate_keys()
