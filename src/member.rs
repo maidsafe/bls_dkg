@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::crypto::{encryption, signing};
 use crate::id::{PublicId as TraitPublicId, SecretId};
 use crate::key_gen::message::Message;
 use crate::key_gen::outcome::Outcome;
@@ -16,25 +15,38 @@ use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver};
 use log::{info, trace};
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p, QuicP2pError, Token};
-use rand::{thread_rng, Rng};
+use rand::{thread_rng, Rng, RngCore};
 use schedule_recv::periodic_ms;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{btree_set::BTreeSet, HashMap};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::collections::{BTreeSet, HashMap};
+use std::net::SocketAddr;
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-pub const IP_LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+/// Time to wait before starting `timed_phase_transition` in milliseconds
+pub const WAITING_TIME: u32 = 120_000; // 2 minutes - max time for for a session with 7 Members to finish exchanging Contribution messages
+
+/// Signing and verification.
+pub mod signing {
+    pub use threshold_crypto::{PublicKey, SecretKey, Signature, SIG_SIZE};
+}
+
+/// Encryption and decryption
+pub mod encryption {
+    pub use ed25519_dalek::{PublicKey, SecretKey};
+}
 
 pub struct Member {
     inner: Arc<Mutex<Inner>>,
 }
 
 impl Member {
-    pub fn new(config: Config) -> Result<Self, Error> {
+    /// Setup a Member to start DKG
+    pub fn new<R: RngCore>(config: Config, rng: &mut R) -> Result<Self, Error> {
         let node = KeyInfo::new();
 
         let (node_tx, node_rx) = unbounded::<Event>();
@@ -45,13 +57,10 @@ impl Member {
             .build()
             .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
-        let mut rng = thread_rng();
-
         let inner = Inner {
             quic_p2p,
             id: rng.gen(),
             group: Default::default(),
-            connected: Default::default(),
             key_gen: None,
             our_keys: node,
             non_responsive: false,
@@ -63,49 +72,37 @@ impl Member {
         Ok(Self { inner: arc_inner })
     }
 
-    pub fn init_dkg(
-        &mut self,
-        group: HashMap<NodeID, SocketAddr>,
-        threshold: usize,
-    ) -> Result<Message<NodeID>, Error> {
+    /// Connects to every member in the given group
+    pub fn connect_to_group(&mut self, group: HashMap<NodeID, SocketAddr>) {
         let mut inner_locked = self.inner.lock().unwrap();
 
+        // Required to for testing network churns
         #[cfg(test)]
         inner_locked.disconnect_from_all();
 
-        inner_locked.group = group.clone();
+        inner_locked.group = group;
+        inner_locked.connect_to_all();
+    }
 
-        // Maintain the list of connected nodes
-        let connected = group.iter().fold(HashMap::new(), |mut map, (_addr, peer)| {
-            let _ = map.insert(peer.clone(), false);
-            map
-        });
-
-        // Clear just incase we have any dead connections due to network churns
-        inner_locked.connected.clear();
-
-        for (peer, status) in connected {
-            let _ = inner_locked.connected.entry(peer).or_insert(status);
-        }
+    /// Initialize DKG with the connected nodes and returns back the proposal
+    pub fn init_dkg(&mut self, threshold: usize) -> Result<Message<NodeID>, Error> {
+        let mut inner_locked = self.inner.lock().unwrap();
 
         // Extract public_keys of the nodes from the given group for DKG
-        let pub_keys = group.keys().fold(BTreeSet::new(), |mut set, key| {
-            let _ = set.insert(key.clone());
-            set
-        });
+        let pub_keys = inner_locked
+            .group
+            .keys()
+            .fold(BTreeSet::new(), |mut set, key| {
+                let _ = set.insert(key.clone());
+                set
+            });
 
         // Initialize DKG
         let (key_gen, broadcast_msg) =
             KeyGen::initialize(&inner_locked.our_keys, threshold, pub_keys)?;
 
         inner_locked.key_gen = Some(key_gen);
-        inner_locked.connect_to_all();
         Ok(broadcast_msg)
-    }
-
-    /// Query connection status to other peers - Returns true if connected to all, else false
-    pub fn if_connected_to_all(&mut self) -> bool {
-        self.inner.lock().unwrap().if_connected_to_all()
     }
 
     /// Broadcast given message to all the connected peers
@@ -121,15 +118,6 @@ impl Member {
     /// Fetches our NodeID
     pub fn id(&self) -> NodeID {
         self.inner.clone().lock().unwrap().our_keys.node_id()
-    }
-
-    /// Check if our node has received all contributions
-    pub fn all_contribution_received(&self) -> Result<bool, Error> {
-        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
-            Ok(key_gen.all_contribution_received())
-        } else {
-            Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
-        }
     }
 
     /// Check if our node is ready to generate Keys safely
@@ -166,51 +154,42 @@ impl Member {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
     }
+}
 
-    #[cfg(test)]
-    pub fn new_for_test() -> Result<(Self, SocketAddr, NodeID), Error> {
-        let mut config = Config::default();
-        config.ip = Some(IP_LOCAL_HOST);
-        config.port = Some(0);
-
-        let node = KeyInfo::new();
-
-        let (node_tx, node_rx) = unbounded::<Event>();
-        let (client_tx, _client_rx) = unbounded();
-
-        let mut quic_p2p = Builder::new(quic_p2p::EventSenders { node_tx, client_tx })
-            .with_config(config)
-            .build()
-            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
-
-        let info = quic_p2p.our_connection_info().unwrap();
-        let node_id = node.node_id();
-        let mut rng = thread_rng();
-
-        let inner = Inner {
-            quic_p2p,
-            id: rng.gen(),
-            group: Default::default(),
-            connected: Default::default(),
-            key_gen: None,
-            our_keys: node,
-            non_responsive: false,
-        };
-        let arc_inner = Arc::new(Mutex::new(inner));
-
-        let _ = setup_quic_p2p_event_loop(&arc_inner, node_rx);
-
-        Ok((Self { inner: arc_inner }, info, node_id))
+#[cfg(test)]
+impl Member {
+    /// Check if our node has received all contributions
+    pub fn all_contribution_received(&self) -> Result<bool, Error> {
+        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
+            Ok(key_gen.all_contribution_received())
+        } else {
+            Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
+        }
     }
 
-    #[cfg(test)]
+    /// Fetches our quic connection's socket address
+    pub fn our_socket_addr(&mut self) -> Result<SocketAddr, Error> {
+        self.inner
+            .lock()
+            .unwrap()
+            .quic_p2p
+            .our_connection_info()
+            .map_err(|e| Error::QuicP2P(e.to_string()))
+    }
+
+    /// Set the given node as non_responsive
     pub fn set_as_non_responsive(&mut self) {
         self.inner.lock().unwrap().non_responsive = true
     }
 
-    #[cfg(test)]
+    /// Check if the node is non_responsive
     pub fn is_non_responsive(&self) -> bool {
         self.inner.lock().unwrap().non_responsive
+    }
+
+    /// Disconnect from all the nodes
+    pub fn disconnect_from_all(&mut self) {
+        self.inner.lock().unwrap().disconnect_from_all()
     }
 }
 
@@ -313,7 +292,6 @@ struct Inner {
     quic_p2p: QuicP2p,
     id: u64,
     group: HashMap<NodeID, SocketAddr>,
-    connected: HashMap<SocketAddr, bool>,
     key_gen: Option<KeyGen<KeyInfo>>,
     our_keys: KeyInfo,
     non_responsive: bool,
@@ -352,11 +330,7 @@ impl Inner {
     // Connects to every Node in the group
     pub fn connect_to_all(&mut self) {
         for (_id, socket_addr) in self.group.iter() {
-            // Safe to unwrap
-            let connected = self.connected.get(socket_addr).unwrap();
-            if !connected {
-                self.quic_p2p.connect_to(*socket_addr)
-            }
+            self.quic_p2p.connect_to(*socket_addr)
         }
     }
 
@@ -364,23 +338,13 @@ impl Inner {
     // Disconnects from every Node in the group
     pub fn disconnect_from_all(&mut self) {
         for (_id, socket_addr) in self.group.iter() {
-            // Safe to unwrap
-            let connected = self.connected.get(socket_addr).unwrap();
-            if *connected {
-                self.quic_p2p.disconnect_from(*socket_addr)
-            }
+            self.quic_p2p.disconnect_from(*socket_addr)
         }
     }
 
     // Updates the connected list if successfully connected at the transport layer
     pub fn handle_connected_to(&mut self, peer: Peer) {
         trace!("Connected to Peer: {:?}", peer);
-        let _ = self.connected.insert(peer.peer_addr(), true);
-    }
-
-    // Checks if we are connected to all the nodes in the group
-    pub fn if_connected_to_all(&mut self) -> bool {
-        self.connected.iter().all(|item| *item.1)
     }
 
     // Dispatches the incoming DKG message to the Key_Gen instance
@@ -422,9 +386,20 @@ impl Inner {
 
     // Timed Phase transition needs to be called if we do not finalize automatically
     fn start_timed_phase_trasition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
-        let tick = periodic_ms(10_000); // 10 seconds
+        let (tx, rx) = channel();
+        let _ = thread::spawn(move || {
+            #[cfg(not(test))]
+            let tick = periodic_ms(WAITING_TIME); // 2 minutes
 
-        tick.recv().unwrap();
+            // We don't have to wait in tests as we wait for completion of message exchanges beforehand
+            #[cfg(test)]
+            let tick = periodic_ms(1_000); // 1 seconds
+            {
+                tick.recv().unwrap();
+                tx.send(()).unwrap()
+            }
+        });
+        rx.recv().unwrap();
         let mut rng = thread_rng();
         match self.key_gen {
             Some(ref mut key_gen) => key_gen.timed_phase_transition(&mut rng),
@@ -485,7 +460,6 @@ impl Inner {
                 peer,
                 err
             );
-            self.connected.insert(peer.peer_addr(), false);
         }
     }
 }

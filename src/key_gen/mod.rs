@@ -805,7 +805,7 @@ impl<S: SecretId> KeyGen<S> {
                 // finalize_complaint_phase function call.
             }
             Phase::Justification | Phase::Commitment => {
-                // As there was Complaint phase being complated, it is exepcted all nodes involved
+                // As Complaint phase gets completed, it is expected that all nodes are now
                 // in these two phases. Hence here a strict rule is undertaken that: any missing
                 // vote will be considered as a potential non-voter.
                 for part in self.parts.values() {

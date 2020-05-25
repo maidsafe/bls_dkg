@@ -203,12 +203,11 @@ fn threshold_signature() {
     // Compute the keys and threshold signature shares.
     let msg = "Hello from the group!";
 
-    let outcome = generators[0]
+    let pub_key_set = generators[0]
         .generate_keys()
         .expect("Failed to generate `PublicKeySet` for node #0")
-        .1;
-
-    let pub_key_set = outcome.public_key_set;
+        .1
+        .public_key_set;
 
     let sig_shares: BTreeMap<_, _> = generators
         .iter()

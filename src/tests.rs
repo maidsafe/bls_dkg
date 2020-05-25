@@ -14,118 +14,120 @@ mod test {
     use crate::Member;
     use bincode::serialize;
     use itertools::Itertools;
-    use rand::Rng;
-    use std::collections::{btree_set::BTreeSet, BTreeMap, HashMap};
-    use std::net::SocketAddr;
+    use quic_p2p::Config;
+    use rand::{thread_rng, Rng, RngCore};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::thread::sleep;
     use std::time::Duration;
 
     const NODE_NUM: usize = 7;
     const THRESHOLD: usize = 5;
+    const SLEEPING_PERIOD: u64 = 100; // Time(in seconds) required for successful completion of a DKG session with 7 nodes
+    pub const IP_LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
-    fn setup_members_and_init_dkg(
+    fn setup_members_and_init_dkg<R: RngCore>(
         num: usize,
         non_responsives: BTreeSet<usize>,
+        rng: &mut R,
     ) -> (Vec<NodeID>, Vec<Member>) {
-        let (ids, mut members, _addrs, map) = create_members(num);
+        let (ids, mut members, map) = create_members(num, rng);
 
-        initialize_dkg(&mut members, map, non_responsives, THRESHOLD);
+        // Sort them to follow KeyGen's indexing
+        members.sort();
+
+        connect_and_initialize_dkg(&mut members, map, non_responsives, THRESHOLD);
 
         (ids, members)
     }
 
-    fn create_members(
+    fn create_members<R: RngCore>(
         num: usize,
-    ) -> (
-        Vec<NodeID>,
-        Vec<Member>,
-        Vec<SocketAddr>,
-        HashMap<NodeID, SocketAddr>,
-    ) {
+        mut rng: &mut R,
+    ) -> (Vec<NodeID>, Vec<Member>, HashMap<NodeID, SocketAddr>) {
         let mut member_vec = vec![];
         let mut id_vec = vec![];
-        let mut socket_addr = vec![];
         let mut map = HashMap::new();
 
         for _ in 0..num {
-            let (member, addr, id) = Member::new_for_test().unwrap();
+            let mut config = Config::default();
+            config.ip = Some(IP_LOCAL_HOST);
+            config.port = Some(0);
+
+            let member = Member::new(config, &mut rng).unwrap();
+            let id = member.id();
             member_vec.push(member);
             id_vec.push(id.clone());
-            socket_addr.push(addr);
-            map.insert(id, addr);
         }
 
-        (id_vec, member_vec, socket_addr, map)
+        // Sort them to follow KeyGen's indexing
+        id_vec.sort();
+        member_vec.sort();
+
+        // Generate Group's connection details
+        for (i, member) in member_vec.iter_mut().enumerate() {
+            let addr = member.our_socket_addr().unwrap();
+            map.insert(id_vec[i].clone(), addr);
+        }
+
+        (id_vec, member_vec, map)
     }
 
-    fn initialize_dkg(
+    fn connect_and_initialize_dkg(
         members: &mut Vec<Member>,
         map: HashMap<NodeID, SocketAddr>,
         non_responsives: BTreeSet<usize>,
         threshold: usize,
     ) {
+        for member in members.iter_mut() {
+            member.connect_to_group(map.clone())
+        }
+
+        // Wait for Nodes to connect to each other
+        sleep(Duration::from_secs(20));
+
         let mut proposals = vec![];
         // Initialize DKG for all the Nodes
         for member in members.iter_mut() {
-            let proposal = member.init_dkg(map.clone(), threshold).unwrap();
+            let proposal = member.init_dkg(threshold).unwrap();
             proposals.push(proposal.clone());
         }
 
-        // Wait for quic connections to connect to each other
-        std::thread::sleep(Duration::from_secs(20));
-
         // Non-responsive members close connections
-        for i in 0..members.len() {
+        for (i, member) in members.iter_mut().enumerate() {
             if non_responsives.contains(&i) {
-                members[i].set_as_non_responsive();
+                member.set_as_non_responsive();
+                member.disconnect_from_all();
             }
         }
 
-        // Wait for threads to disconnect successfully
-        if !non_responsives.is_empty() {
-            sleep(Duration::from_secs(10));
-        }
+        // Wait for Non-responsive members to close connections
+        sleep(Duration::from_secs(5));
 
-        // Broadcast all the messages simultaneously via multi-threading
-        if non_responsives.is_empty() {
-            for x in 0..members.len() {
-                // Could get delayed during connecting in real-network - keep trying in a loop
-                let mut connected = members[x].if_connected_to_all();
-                if connected {
-                    members[x].broadcast(proposals[x].clone()).unwrap();
-                } else {
-                    while !connected {
-                        connected = members[x].if_connected_to_all();
-                        if connected {
-                            members[x].broadcast(proposals[x].clone()).unwrap();
-                            break;
-                        }
-                    }
-                }
-            }
-        } else {
-            // Do not check for connectivity as non-responsive nodes get disconnected
-            for x in 0..members.len() {
-                if !non_responsives.contains(&x) {
-                    members[x].broadcast(proposals[x].clone()).unwrap();
-                }
+        // Broadcast all the messages
+        for (x, member) in members.iter_mut().enumerate() {
+            if !member.is_non_responsive() {
+                member.broadcast(proposals[x].clone()).unwrap();
             }
         }
 
-        // Wait for the Quic threads to finish the DKG process - increases as the number of nodes increase
+        // Wait for the Quic threads to finish the DKG process
+        // 1 successful session of DKG with 7 Nodes approximately takes 80 seconds to complete.
+        // Duration increases as the number of nodes increase, therefore we increase it for every 3 nodes
         let len = members.len();
-        if len <= 6 {
-            sleep(Duration::from_secs(30));
-        } else if len >= 7 && len <= 10 {
-            sleep(Duration::from_secs(60));
+        if len <= NODE_NUM {
+            sleep(Duration::from_secs(SLEEPING_PERIOD));
+        } else if len > NODE_NUM && len <= NODE_NUM + 3 {
+            sleep(Duration::from_secs(SLEEPING_PERIOD + 60));
         } else {
-            sleep(Duration::from_secs(90));
+            sleep(Duration::from_secs(SLEEPING_PERIOD + 90));
         }
     }
 
     #[test]
-    fn member_test() {
-        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
+    fn member_basics_test() {
+        let mut rng = thread_rng();
+        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default(), &mut rng);
 
         // Check for Phases, Contributions and Readiness
         for member in members.iter_mut().take(NODE_NUM) {
@@ -133,20 +135,23 @@ mod test {
             assert_eq!(Phase::Finalization, member.phase().unwrap());
             assert!(member.is_ready().unwrap());
         }
-    }
-
-    #[test]
-    fn threshold_sign_online() {
-        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
-
-        let outcome = members[0]
-            .generate_keys()
-            .expect("Failed to generate `PublicKeySet` for node #0")
-            .1;
-        let pub_key_set = outcome.public_key_set;
 
         // Convert members into an ordered BTreeSet for testing.
         let set: BTreeSet<Member> = members.drain(..).collect();
+
+        threshold_sign_verification(&set);
+        threshold_encrypt_verification(&set);
+    }
+
+    fn threshold_sign_verification(set: &BTreeSet<Member>) {
+        let pub_key_set = set
+            .iter()
+            .next()
+            .unwrap()
+            .generate_keys()
+            .expect("Failed to generate `PublicKeySet` for node #0")
+            .1
+            .public_key_set;
 
         let msg = "Hello from the group!";
         let sig_shares: BTreeMap<_, _> = set
@@ -207,18 +212,15 @@ mod test {
         }
     }
 
-    #[test]
-    fn threshold_encrypt_online() {
-        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
-
-        let pub_key_set = members[0]
+    fn threshold_encrypt_verification(set: &BTreeSet<Member>) {
+        let pub_key_set = set
+            .iter()
+            .next()
+            .unwrap()
             .generate_keys()
             .expect("Failed to generate `PublicKeySet` for node #0")
             .1
             .public_key_set;
-
-        // Convert members into an ordered BTreeSet for testing.
-        let set: BTreeSet<Member> = members.drain(..).collect();
 
         let msg = "Help for threshold encryption unit test!".as_bytes();
         let ciphertext = pub_key_set.public_key().encrypt(msg);
@@ -275,27 +277,38 @@ mod test {
         let mut rng = rand::thread_rng();
 
         let initial_num = 3;
-        let (_ids, mut members, _addrs, mut map) = create_members(initial_num);
+        let (_ids, mut members, mut map) = create_members(initial_num, &mut rng);
 
-        let mut naming_index = initial_num;
+        let mut rounds = initial_num;
 
-        while naming_index < 15 {
-            if members.len() < NODE_NUM {
+        // Starting with 3 nodes, rounds are incremented when new nodes are added.
+        // We will be testing with lesser number of nodes and rounds as churns tests can take a while to
+        // complete and can block the CI
+        while rounds < 7 {
+            if members.len() < NODE_NUM - 3 {
                 // Create a new Node
-                let (member, addr, id) = Member::new_for_test().unwrap();
+                let mut config = Config::default();
+                config.ip = Some(IP_LOCAL_HOST);
+                config.port = Some(0);
+
+                let mut member = Member::new(config, &mut rng).unwrap();
+                let id = member.id();
+                let addr = member.our_socket_addr().unwrap();
                 members.push(member);
                 map.insert(id, addr);
-                naming_index += 1;
+                rounds += 1;
             } else {
+                // Remove a Node
                 let idx = rng.gen_range(0, members.len());
                 let id = members[idx].id();
+                // Close connections and drop the node.
                 members[idx].close();
-                let _ = members.remove(idx);
-                let _ = assert!(map.remove(&id).is_some());
+                let _drop_member = members.remove(idx);
+                assert!(map.remove(&id).is_some());
             }
 
             let threshold: usize = members.len() * 2 / 3;
-            initialize_dkg(&mut members, map.clone(), BTreeSet::new(), threshold);
+            connect_and_initialize_dkg(&mut members, map.clone(), BTreeSet::new(), threshold);
 
             assert!(members
                 .iter_mut()

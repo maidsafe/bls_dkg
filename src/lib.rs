@@ -16,7 +16,6 @@
 #[cfg(test)]
 extern crate serde_derive;
 
-pub mod crypto;
 pub mod id;
 pub mod key_gen;
 pub mod member;
