@@ -14,61 +14,81 @@ mod test {
     use crate::Member;
     use bincode::serialize;
     use itertools::Itertools;
-    use quic_p2p::{Config, Peer};
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
-    use std::net::{IpAddr, Ipv4Addr};
+    use rand::Rng;
+    use std::collections::{btree_set::BTreeSet, BTreeMap, HashMap};
+    use std::net::SocketAddr;
     use std::thread::sleep;
     use std::time::Duration;
 
-    pub const IP_LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-    pub const NODE_NUM: usize = 7;
-    pub const THRESHOLD: usize = 6;
+    const NODE_NUM: usize = 7;
+    const THRESHOLD: usize = 5;
 
-    fn setup_members_and_init_dkg(non_responsives: BTreeSet<usize>) -> (Vec<NodeID>, Vec<Member>) {
-        let mut node_id_vec = vec![];
-        let mut config_vec = vec![];
-        let mut socket_addr_vec = vec![];
-        let mut peer_vec = vec![];
+    fn setup_members_and_init_dkg(
+        num: usize,
+        non_responsives: BTreeSet<usize>,
+    ) -> (Vec<NodeID>, Vec<Member>) {
+        let (ids, mut members, _addrs, map) = create_members(num);
+
+        initialize_dkg(&mut members, map, non_responsives, THRESHOLD);
+
+        (ids, members)
+    }
+
+    fn create_members(
+        num: usize,
+    ) -> (
+        Vec<NodeID>,
+        Vec<Member>,
+        Vec<SocketAddr>,
+        HashMap<NodeID, SocketAddr>,
+    ) {
+        let mut member_vec = vec![];
+        let mut id_vec = vec![];
+        let mut socket_addr = vec![];
         let mut map = HashMap::new();
-        let mut members = vec![];
+
+        for _ in 0..num {
+            let (member, addr, id) = Member::new_for_test().unwrap();
+            member_vec.push(member);
+            id_vec.push(id.clone());
+            socket_addr.push(addr);
+            map.insert(id, addr);
+        }
+
+        (id_vec, member_vec, socket_addr, map)
+    }
+
+    fn initialize_dkg(
+        members: &mut Vec<Member>,
+        map: HashMap<NodeID, SocketAddr>,
+        non_responsives: BTreeSet<usize>,
+        threshold: usize,
+    ) {
         let mut proposals = vec![];
-
-        // Setup Node's transport layer details
-        for _ in 0..NODE_NUM {
-            let mut config = Config::default();
-            config.ip = Some(IP_LOCAL_HOST);
-            config.port = Some(0);
-
-            let (member, socket_addr) = Member::new_for_test(config.clone()).unwrap();
-
-            let peer = Peer::Node(socket_addr);
-            let id = member.id();
-
-            node_id_vec.push(id);
-            config_vec.push(config);
-            socket_addr_vec.push(socket_addr);
-            peer_vec.push(peer);
-            members.push(member);
-        }
-
-        // Forms the group - NodeIDs and Socket Addresses.
-        for x in 0..NODE_NUM {
-            let _ = map.insert(
-                node_id_vec[x].clone(),
-                (socket_addr_vec[x], peer_vec[x].clone()),
-            );
-        }
-
         // Initialize DKG for all the Nodes
-        for member in members.iter_mut().take(NODE_NUM) {
-            let proposal = member.init_dkg(map.clone(), THRESHOLD).unwrap();
+        for member in members.iter_mut() {
+            let proposal = member.init_dkg(map.clone(), threshold).unwrap();
             proposals.push(proposal.clone());
-            std::thread::sleep(Duration::from_secs(5));
+        }
+
+        // Wait for quic connections to connect to each other
+        std::thread::sleep(Duration::from_secs(20));
+
+        // Non-responsive members close connections
+        for i in 0..members.len() {
+            if non_responsives.contains(&i) {
+                members[i].set_as_non_responsive();
+            }
+        }
+
+        // Wait for threads to disconnect successfully
+        if !non_responsives.is_empty() {
+            sleep(Duration::from_secs(10));
         }
 
         // Broadcast all the messages simultaneously via multi-threading
-        for x in 0..NODE_NUM {
-            if !non_responsives.contains(&x) {
+        if non_responsives.is_empty() {
+            for x in 0..members.len() {
                 // Could get delayed during connecting in real-network - keep trying in a loop
                 let mut connected = members[x].if_connected_to_all();
                 if connected {
@@ -83,17 +103,29 @@ mod test {
                     }
                 }
             }
+        } else {
+            // Do not check for connectivity as non-responsive nodes get disconnected
+            for x in 0..members.len() {
+                if !non_responsives.contains(&x) {
+                    members[x].broadcast(proposals[x].clone()).unwrap();
+                }
+            }
         }
 
-        // Wait for the Quic threads to finish the DKG process - should be increased if NODENUM is increased
-        sleep(Duration::from_secs(180));
-
-        (node_id_vec, members)
+        // Wait for the Quic threads to finish the DKG process - increases as the number of nodes increase
+        let len = members.len();
+        if len <= 6 {
+            sleep(Duration::from_secs(30));
+        } else if len >= 7 && len <= 10 {
+            sleep(Duration::from_secs(60));
+        } else {
+            sleep(Duration::from_secs(90));
+        }
     }
 
     #[test]
     fn member_test() {
-        let (_, mut members) = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
 
         // Check for Phases, Contributions and Readiness
         for member in members.iter_mut().take(NODE_NUM) {
@@ -105,7 +137,7 @@ mod test {
 
     #[test]
     fn threshold_sign_online() {
-        let (_, mut members) = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
 
         let outcome = members[0]
             .generate_keys()
@@ -139,9 +171,9 @@ mod test {
             })
             .collect();
 
-        let sig_combinations = sig_shares.iter().combinations(6 + 1);
+        let sig_combinations = sig_shares.iter().combinations(THRESHOLD + 1);
 
-        let deficient_sig_combinations = sig_shares.iter().combinations(6);
+        let deficient_sig_combinations = sig_shares.iter().combinations(THRESHOLD);
 
         for combination in deficient_sig_combinations.clone() {
             match pub_key_set.combine_signatures(combination) {
@@ -177,7 +209,7 @@ mod test {
 
     #[test]
     fn threshold_encrypt_online() {
-        let (_, mut members) = setup_members_and_init_dkg(Default::default());
+        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default());
 
         let pub_key_set = members[0]
             .generate_keys()
@@ -235,6 +267,39 @@ mod test {
                 }
                 Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
             }
+        }
+    }
+
+    #[test]
+    fn churn_test() {
+        let mut rng = rand::thread_rng();
+
+        let initial_num = 3;
+        let (_ids, mut members, _addrs, mut map) = create_members(initial_num);
+
+        let mut naming_index = initial_num;
+
+        while naming_index < 15 {
+            if members.len() < NODE_NUM {
+                // Create a new Node
+                let (member, addr, id) = Member::new_for_test().unwrap();
+                members.push(member);
+                map.insert(id, addr);
+                naming_index += 1;
+            } else {
+                let idx = rng.gen_range(0, members.len());
+                let id = members[idx].id();
+                members[idx].close();
+                let _ = members.remove(idx);
+                let _ = assert!(map.remove(&id).is_some());
+            }
+
+            let threshold: usize = members.len() * 2 / 3;
+            initialize_dkg(&mut members, map.clone(), BTreeSet::new(), threshold);
+
+            assert!(members
+                .iter_mut()
+                .all(|member| member.generate_keys().is_ok()));
         }
     }
 }

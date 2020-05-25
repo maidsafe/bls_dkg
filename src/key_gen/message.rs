@@ -11,7 +11,7 @@ use super::encryptor::{Iv, Key};
 use super::{Acknowledgment, Part};
 use crate::id::PublicId;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::BTreeMap, btree_set::BTreeSet};
 use std::fmt;
 
 /// Messages used for running BLS DKG.
