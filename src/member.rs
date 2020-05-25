@@ -20,12 +20,14 @@ use rand::{thread_rng, Rng};
 use schedule_recv::periodic_ms;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
-use std::net::SocketAddr;
+use std::collections::{btree_set::BTreeSet, HashMap};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+pub const IP_LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
 pub struct Member {
     inner: Arc<Mutex<Inner>>,
@@ -52,6 +54,7 @@ impl Member {
             connected: Default::default(),
             key_gen: None,
             our_keys: node,
+            non_responsive: false,
         };
         let arc_inner = Arc::new(Mutex::new(inner));
 
@@ -60,62 +63,36 @@ impl Member {
         Ok(Self { inner: arc_inner })
     }
 
-    #[cfg(test)]
-    pub fn new_for_test(config: Config) -> Result<(Self, SocketAddr), Error> {
-        let node = KeyInfo::new();
-
-        let (node_tx, node_rx) = unbounded::<Event>();
-        let (client_tx, _client_rx) = unbounded();
-
-        let mut quic_p2p = Builder::new(quic_p2p::EventSenders { node_tx, client_tx })
-            .with_config(config)
-            .build()
-            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
-
-        let info = quic_p2p.our_connection_info().unwrap();
-        let mut rng = thread_rng();
-
-        let inner = Inner {
-            quic_p2p,
-            id: rng.gen(),
-            group: Default::default(),
-            connected: Default::default(),
-            key_gen: None,
-            our_keys: node,
-        };
-        let arc_inner = Arc::new(Mutex::new(inner));
-
-        let _ = setup_quic_p2p_event_loop(&arc_inner, node_rx);
-
-        Ok((Self { inner: arc_inner }, info))
-    }
-
     pub fn init_dkg(
         &mut self,
-        group: HashMap<NodeID, (SocketAddr, Peer)>,
+        group: HashMap<NodeID, SocketAddr>,
         threshold: usize,
     ) -> Result<Message<NodeID>, Error> {
         let mut inner_locked = self.inner.lock().unwrap();
+
+        #[cfg(test)]
+        inner_locked.disconnect_from_all();
+
         inner_locked.group = group.clone();
 
-        // Maintain the list of conneted nodes
+        // Maintain the list of connected nodes
         let connected = group.iter().fold(HashMap::new(), |mut map, (_addr, peer)| {
-            let _ = map.insert(peer.1.clone(), false);
+            let _ = map.insert(peer.clone(), false);
             map
         });
+
+        // Clear just incase we have any dead connections due to network churns
+        inner_locked.connected.clear();
 
         for (peer, status) in connected {
             let _ = inner_locked.connected.entry(peer).or_insert(status);
         }
 
         // Extract public_keys of the nodes from the given group for DKG
-        let mut pub_keys = group.keys().fold(BTreeSet::new(), |mut set, key| {
+        let pub_keys = group.keys().fold(BTreeSet::new(), |mut set, key| {
             let _ = set.insert(key.clone());
             set
         });
-
-        let our_keys = inner_locked.our_keys.node_id();
-        pub_keys.insert(our_keys);
 
         // Initialize DKG
         let (key_gen, broadcast_msg) =
@@ -188,6 +165,52 @@ impl Member {
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test() -> Result<(Self, SocketAddr, NodeID), Error> {
+        let mut config = Config::default();
+        config.ip = Some(IP_LOCAL_HOST);
+        config.port = Some(0);
+
+        let node = KeyInfo::new();
+
+        let (node_tx, node_rx) = unbounded::<Event>();
+        let (client_tx, _client_rx) = unbounded();
+
+        let mut quic_p2p = Builder::new(quic_p2p::EventSenders { node_tx, client_tx })
+            .with_config(config)
+            .build()
+            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+
+        let info = quic_p2p.our_connection_info().unwrap();
+        let node_id = node.node_id();
+        let mut rng = thread_rng();
+
+        let inner = Inner {
+            quic_p2p,
+            id: rng.gen(),
+            group: Default::default(),
+            connected: Default::default(),
+            key_gen: None,
+            our_keys: node,
+            non_responsive: false,
+        };
+        let arc_inner = Arc::new(Mutex::new(inner));
+
+        let _ = setup_quic_p2p_event_loop(&arc_inner, node_rx);
+
+        Ok((Self { inner: arc_inner }, info, node_id))
+    }
+
+    #[cfg(test)]
+    pub fn set_as_non_responsive(&mut self) {
+        self.inner.lock().unwrap().non_responsive = true
+    }
+
+    #[cfg(test)]
+    pub fn is_non_responsive(&self) -> bool {
+        self.inner.lock().unwrap().non_responsive
     }
 }
 
@@ -289,10 +312,11 @@ impl Default for KeyInfo {
 struct Inner {
     quic_p2p: QuicP2p,
     id: u64,
-    group: HashMap<NodeID, (SocketAddr, Peer)>,
-    connected: HashMap<Peer, bool>,
+    group: HashMap<NodeID, SocketAddr>,
+    connected: HashMap<SocketAddr, bool>,
     key_gen: Option<KeyGen<KeyInfo>>,
     our_keys: KeyInfo,
+    non_responsive: bool,
 }
 
 impl PartialEq for Inner {
@@ -327,12 +351,23 @@ impl Drop for Inner {
 impl Inner {
     // Connects to every Node in the group
     pub fn connect_to_all(&mut self) {
-        for member in self.group.iter() {
-            let (socket_addr, peer) = member.1;
+        for (_id, socket_addr) in self.group.iter() {
             // Safe to unwrap
-            let connected = self.connected.get(peer).unwrap();
+            let connected = self.connected.get(socket_addr).unwrap();
             if !connected {
                 self.quic_p2p.connect_to(*socket_addr)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    // Disconnects from every Node in the group
+    pub fn disconnect_from_all(&mut self) {
+        for (_id, socket_addr) in self.group.iter() {
+            // Safe to unwrap
+            let connected = self.connected.get(socket_addr).unwrap();
+            if *connected {
+                self.quic_p2p.disconnect_from(*socket_addr)
             }
         }
     }
@@ -340,12 +375,12 @@ impl Inner {
     // Updates the connected list if successfully connected at the transport layer
     pub fn handle_connected_to(&mut self, peer: Peer) {
         trace!("Connected to Peer: {:?}", peer);
-        let _ = self.connected.insert(peer, true);
+        let _ = self.connected.insert(peer.peer_addr(), true);
     }
 
     // Checks if we are connected to all the nodes in the group
-    pub fn if_connected_to_all(&self) -> bool {
-        self.connected.iter().all(|item| item.1 == &true)
+    pub fn if_connected_to_all(&mut self) -> bool {
+        self.connected.iter().all(|item| *item.1)
     }
 
     // Dispatches the incoming DKG message to the Key_Gen instance
@@ -356,9 +391,11 @@ impl Inner {
                 if let Some(ref mut key_gen) = self.key_gen {
                     match key_gen.handle_message(&mut rng, msg) {
                         Ok(list) => {
-                            for message in list {
-                                // Broadcast the reply messages right away
-                                let _ = self.broadcast(message);
+                            if !self.non_responsive {
+                                for message in list {
+                                    // Broadcast the reply messages right away
+                                    let _ = self.broadcast(message);
+                                }
                             }
                         }
                         Err(e) => trace!("Error: {:#?}", e),
@@ -372,12 +409,13 @@ impl Inner {
     }
 
     fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
-        for (_, (_socket_addr, peer)) in self.group.iter() {
+        for (_, socket_addr) in self.group.iter() {
             let token = rand::thread_rng().gen();
             let serialized_msg =
                 serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
             let msg = Bytes::from(serialized_msg.as_slice());
-            self.quic_p2p.send(peer.clone(), msg.clone(), token)
+            self.quic_p2p
+                .send(Peer::Node(*socket_addr), msg.clone(), token)
         }
         Ok(())
     }
@@ -395,7 +433,7 @@ impl Inner {
     }
 
     fn terminate(&mut self) {
-        for (_nodeid, (socket_addr, _peer)) in self.group.iter() {
+        for (_nodeid, socket_addr) in self.group.iter() {
             self.quic_p2p.disconnect_from(*socket_addr);
         }
     }
@@ -447,7 +485,7 @@ impl Inner {
                 peer,
                 err
             );
-            self.connected.insert(peer, false);
+            self.connected.insert(peer.peer_addr(), false);
         }
     }
 }

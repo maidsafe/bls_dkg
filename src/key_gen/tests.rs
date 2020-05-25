@@ -15,8 +15,8 @@ use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
 
 // Alter the configure of the number of nodes and the threshold.
-const NODENUM: usize = 3;
-const THRESHOLD: usize = 2;
+const NODENUM: usize = 7;
+const THRESHOLD: usize = 5;
 
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
@@ -69,7 +69,7 @@ fn messaging<R: RngCore>(
     non_responsives: BTreeSet<u64>,
 ) {
     // Keep broadcasting the proposals among the generators till no more.
-    // The proposal from non_responsives node shall be ignored.
+    // The proposal from non_responsive nodes shall be ignored.
     while !proposals.is_empty() {
         let proposals_local = std::mem::replace(proposals, Vec::new());
         for proposal in &proposals_local {
@@ -159,7 +159,7 @@ fn having_min_unresponsive_nodes_cause_block() {
     // i.e. the Initialization phase will be completed and transits into Proposal.
     // With more non-responsive nodes, `finalize_contributing_phase` returns with Complaints of
     // non-contributors, and trigger the transition into Complaint phase. However, the Complaint
-    // phase will be blocked as cannot collect more than thresold votes.
+    // phase will be blocked as cannot collect more than threshold votes.
     // And the phase shall be blocked at Proposal.
     let mut proposals = Vec::new();
 
