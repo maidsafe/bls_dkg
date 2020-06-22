@@ -14,12 +14,12 @@ use bincode::{deserialize, serialize};
 use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver};
 use log::{info, trace};
-use quic_p2p::{Builder, Config, Event, Peer, QuicP2p, QuicP2pError, Token};
+use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
 use rand::{thread_rng, Rng, RngCore};
 use schedule_recv::periodic_ms;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
@@ -52,10 +52,13 @@ impl Member {
         let (node_tx, node_rx) = unbounded::<Event>();
         let (client_tx, _client_rx) = unbounded();
 
-        let quic_p2p = Builder::new(quic_p2p::EventSenders { node_tx, client_tx })
-            .with_config(config)
-            .build()
-            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+        let quic_p2p = QuicP2p::with_config(
+            quic_p2p::EventSenders { node_tx, client_tx },
+            Some(config),
+            VecDeque::new(),
+            false,
+        )
+        .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
         let inner = Inner {
             quic_p2p,
@@ -373,11 +376,11 @@ impl Inner {
     }
 
     fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
+        let serialized_msg =
+            serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
+        let msg = Bytes::from(serialized_msg);
         for (_, socket_addr) in self.group.iter() {
             let token = rand::thread_rng().gen();
-            let serialized_msg =
-                serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
-            let msg = Bytes::from(serialized_msg.as_slice());
             self.quic_p2p
                 .send(Peer::Node(*socket_addr), msg.clone(), token)
         }

@@ -58,6 +58,9 @@ pub enum Error {
     /// Unexpected phase.
     #[error(display = "Unexpected phase")]
     UnexpectedPhase { expected: Phase, actual: Phase },
+    /// Ack on a missed part.
+    #[error(display = "ACK on missed part")]
+    MissingPart,
 }
 
 impl From<Box<bincode::ErrorKind>> for Error {
@@ -365,6 +368,10 @@ impl<S: SecretId> KeyGen<S> {
         rng: &mut R,
         msg: Message<S::PublicId>,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        debug!(
+            "{:?} with phase {:?} handle DKG message {:?}",
+            self, self.phase, msg
+        );
         match msg {
             Message::Initialization {
                 key_gen_id,
@@ -469,6 +476,10 @@ impl<S: SecretId> KeyGen<S> {
                     key_gen_id: sender_index,
                     part,
                 };
+                debug!(
+                    "{:?} complain {:?} with Error {:?}",
+                    self, sender_index, _fault
+                );
                 let invalid_contribute = serialize(&msg)?;
                 self.pending_complain_messages.push(Message::Complaint {
                     key_gen_id: self.our_index,
@@ -530,17 +541,27 @@ impl<S: SecretId> KeyGen<S> {
                     }
                 }
             }
-            Err(_fault) => {
+            Err(fault) => {
                 let msg = Message::<S::PublicId>::Acknowledgment {
                     key_gen_id: sender_index,
                     ack,
                 };
-                let invalid_ack = serialize(&msg)?;
-                self.pending_complain_messages.push(Message::Complaint {
-                    key_gen_id: self.our_index,
-                    target: sender_index,
-                    msg: invalid_ack,
-                });
+                debug!(
+                    "{:?} complain {:?} with Error {:?}",
+                    self, sender_index, fault
+                );
+                if fault == AcknowledgmentFault::MissingPart {
+                    // TODO: consider carry out caching internally.
+                    debug!("{:?} MissingPart on Ack not causing a complain, return with error to trigger an outside cache", self);
+                    return Err(Error::MissingPart);
+                } else {
+                    let invalid_ack = serialize(&msg)?;
+                    self.pending_complain_messages.push(Message::Complaint {
+                        key_gen_id: self.our_index,
+                        target: sender_index,
+                        msg: invalid_ack,
+                    });
+                }
             }
         }
         Ok(Vec::new())
@@ -558,15 +579,27 @@ impl<S: SecretId> KeyGen<S> {
         self.phase = Phase::Complaining;
 
         for non_contributor in self.non_contributors().0 {
+            debug!(
+                "{:?} complain {:?} for non-contribution during Contribution phase",
+                self, non_contributor
+            );
             self.pending_complain_messages.push(Message::Complaint {
                 key_gen_id: self.our_index,
                 target: non_contributor,
                 msg: b"Not contributed".to_vec(),
             });
         }
-
-        // In case of no more complains and we are ready, transit into `Finalization` phase.
-        if self.pending_complain_messages.is_empty() && self.is_ready() {
+        debug!(
+            "{:?} has {:?} complain message and is {:?} ready ({:?} - {:?})",
+            self,
+            self.pending_complain_messages.len(),
+            self.is_ready(),
+            self.complete_parts_count(),
+            self.threshold,
+        );
+        // In case of ready, transit into `Finalization` phase.
+        if self.is_ready() {
+            self.pending_complain_messages.clear();
             self.phase = Phase::Finalization;
         }
         Ok(mem::take(&mut self.pending_complain_messages))
@@ -602,6 +635,7 @@ impl<S: SecretId> KeyGen<S> {
         &mut self,
         rng: &mut R,
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        debug!("{:?} current phase is {:?}", self, self.phase);
         match self.phase {
             Phase::Contribution => self.finalize_contributing_phase(),
             Phase::Complaining => self.finalize_complaining_phase(rng),
@@ -756,9 +790,9 @@ impl<S: SecretId> KeyGen<S> {
             .count()
     }
 
-    /// Returns `true` if enough parts are complete to safely generate the new key.
+    /// Returns `true` if all parts are complete to safely generate the new key.
     pub fn is_ready(&self) -> bool {
-        self.complete_parts_count() >= self.threshold
+        self.complete_parts_count() == self.pub_keys.len()
     }
 
     /// Returns the new secret key share and the public key set.

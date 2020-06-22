@@ -276,16 +276,17 @@ mod test {
     fn churn_test() {
         let mut rng = rand::thread_rng();
 
-        let initial_num = 3;
+        let total = 5;
+        let initial_num = 2;
         let (_ids, mut members, mut map) = create_members(initial_num, &mut rng);
 
         let mut rounds = initial_num;
 
-        // Starting with 3 nodes, rounds are incremented when new nodes are added.
-        // We will be testing with lesser number of nodes and rounds as churns tests can take a while to
-        // complete and can block the CI
-        while rounds < 7 {
-            if members.len() < NODE_NUM - 3 {
+        // Starting with 2 nodes, rounds are incremented when new nodes are added.
+        // Testing with less number of nodes and rounds as churns tests can take a while to
+        // complete and could block the CI.
+        while rounds < total {
+            if members.len() < total - initial_num {
                 // Create a new Node
                 let mut config = Config::default();
                 config.ip = Some(IP_LOCAL_HOST);
