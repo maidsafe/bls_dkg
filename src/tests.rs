@@ -112,16 +112,23 @@ mod test {
         }
 
         // Wait for the Quic threads to finish the DKG process
-        // 1 successful session of DKG with 7 Nodes approximately takes 80 seconds to complete.
-        // Duration increases as the number of nodes increase, therefore we increase it for every 3 nodes
         let len = members.len();
-        if len <= NODE_NUM {
-            sleep(Duration::from_secs(SLEEPING_PERIOD));
+        let barrier = if len <= NODE_NUM {
+            SLEEPING_PERIOD
         } else if len > NODE_NUM && len <= NODE_NUM + 3 {
-            sleep(Duration::from_secs(SLEEPING_PERIOD + 60));
+            SLEEPING_PERIOD + 60
         } else {
-            sleep(Duration::from_secs(SLEEPING_PERIOD + 90));
+            SLEEPING_PERIOD + 90
+        };
+        let mut tick = 0;
+        while tick < barrier {
+            tick += 1;
+            sleep(Duration::from_secs(1));
+            if members.iter().all(|member| Ok(true) == member.is_ready()) {
+                return;
+            }
         }
+        panic!("Cannot reach DKG consensus after {:?} seconds", barrier);
     }
 
     #[test]

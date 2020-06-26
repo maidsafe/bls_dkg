@@ -12,11 +12,10 @@ use crate::key_gen::outcome::Outcome;
 use crate::key_gen::{Error, KeyGen, Phase};
 use bincode::{deserialize, serialize};
 use bytes::Bytes;
-use crossbeam_channel::{unbounded, Receiver};
+use crossbeam_channel::{tick, unbounded, Receiver};
 use log::{info, trace};
 use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
 use rand::{thread_rng, Rng, RngCore};
-use schedule_recv::periodic_ms;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -28,7 +27,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// Time to wait before starting `timed_phase_transition` in milliseconds
-pub const WAITING_TIME: u32 = 120_000; // 2 minutes - max time for for a session with 7 Members to finish exchanging Contribution messages
+pub const WAITING_TIME: u64 = 120_000; // 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages
 
 /// Signing and verification.
 pub mod signing {
@@ -126,7 +125,7 @@ impl Member {
     /// Check if our node is ready to generate Keys safely
     pub fn is_ready(&self) -> Result<bool, Error> {
         if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
-            Ok(key_gen.is_ready())
+            Ok(key_gen.is_finalized())
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
@@ -392,13 +391,13 @@ impl Inner {
         let (tx, rx) = channel();
         let _ = thread::spawn(move || {
             #[cfg(not(test))]
-            let tick = periodic_ms(WAITING_TIME); // 2 minutes
+            let ticker = tick(Duration::from_millis(WAITING_TIME)); // 2 minutes
 
             // We don't have to wait in tests as we wait for completion of message exchanges beforehand
             #[cfg(test)]
-            let tick = periodic_ms(1_000); // 1 seconds
+            let ticker = tick(Duration::from_millis(1_000)); // 1 second
             {
-                tick.recv().unwrap();
+                ticker.recv().unwrap();
                 tx.send(()).unwrap()
             }
         });

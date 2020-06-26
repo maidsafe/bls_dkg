@@ -541,6 +541,15 @@ impl<S: SecretId> KeyGen<S> {
                     }
                 }
             }
+            Err(AcknowledgmentFault::MissingPart) => {
+                // TODO: consider carry out caching internally.
+                debug!(
+                    "{:?} MissingPart on Ack not causing a complain, /
+                        return with error to trigger an outside cache",
+                    self
+                );
+                return Err(Error::MissingPart);
+            }
             Err(fault) => {
                 let msg = Message::<S::PublicId>::Acknowledgment {
                     key_gen_id: sender_index,
@@ -550,18 +559,13 @@ impl<S: SecretId> KeyGen<S> {
                     "{:?} complain {:?} with Error {:?}",
                     self, sender_index, fault
                 );
-                if fault == AcknowledgmentFault::MissingPart {
-                    // TODO: consider carry out caching internally.
-                    debug!("{:?} MissingPart on Ack not causing a complain, return with error to trigger an outside cache", self);
-                    return Err(Error::MissingPart);
-                } else {
-                    let invalid_ack = serialize(&msg)?;
-                    self.pending_complain_messages.push(Message::Complaint {
-                        key_gen_id: self.our_index,
-                        target: sender_index,
-                        msg: invalid_ack,
-                    });
-                }
+
+                let invalid_ack = serialize(&msg)?;
+                self.pending_complain_messages.push(Message::Complaint {
+                    key_gen_id: self.our_index,
+                    target: sender_index,
+                    msg: invalid_ack,
+                });
             }
         }
         Ok(Vec::new())
@@ -790,9 +794,14 @@ impl<S: SecretId> KeyGen<S> {
             .count()
     }
 
-    /// Returns `true` if all parts are complete to safely generate the new key.
-    pub fn is_ready(&self) -> bool {
+    // Returns `true` if all parts are complete to safely generate the new key.
+    fn is_ready(&self) -> bool {
         self.complete_parts_count() == self.pub_keys.len()
+    }
+
+    /// Returns `true` if in the phase of Finalization.
+    pub fn is_finalized(&self) -> bool {
+        self.phase == Phase::Finalization
     }
 
     /// Returns the new secret key share and the public key set.
