@@ -314,6 +314,8 @@ pub struct KeyGen<S: SecretId> {
     complaints_accumulator: ComplaintsAccumulator<S::PublicId>,
     /// Pending complain messages.
     pending_complain_messages: Vec<Message<S::PublicId>>,
+    /// Pending messages that cannot handle yet.
+    pending_messags: Vec<Message<S::PublicId>>,
 }
 
 impl<S: SecretId> KeyGen<S> {
@@ -345,6 +347,7 @@ impl<S: SecretId> KeyGen<S> {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone(), threshold),
             pending_complain_messages: Vec::new(),
+            pending_messags: Vec::new(),
         };
 
         Ok((
@@ -364,6 +367,44 @@ impl<S: SecretId> KeyGen<S> {
 
     /// Dispatching an incoming dkg message.
     pub fn handle_message<R: RngCore>(
+        &mut self,
+        rng: &mut R,
+        msg: Message<S::PublicId>,
+    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        if self.is_finalized() {
+            return Ok(Vec::new());
+        }
+        let result = self.process_message(rng, msg.clone());
+        match result {
+            Ok(mut msgs) => {
+                msgs.extend(self.poll_pending_messages(rng));
+                Ok(msgs)
+            }
+            Err(Error::UnexpectedPhase { .. }) | Err(Error::MissingPart) => {
+                self.pending_messags.push(msg);
+                Ok(Vec::new())
+            }
+            Err(_) => result,
+        }
+    }
+
+    fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message<S::PublicId>> {
+        let pending_messags = std::mem::replace(&mut self.pending_messags, Vec::new());
+        let mut msgs = Vec::new();
+        for message in pending_messags {
+            if let Ok(new_messages) = self.process_message(rng, message.clone()) {
+                if self.is_finalized() {
+                    return Vec::new();
+                }
+                msgs.extend(new_messages);
+            } else {
+                self.pending_messags.push(message);
+            }
+        }
+        msgs
+    }
+
+    fn process_message<R: RngCore>(
         &mut self,
         rng: &mut R,
         msg: Message<S::PublicId>,
@@ -535,14 +576,13 @@ impl<S: SecretId> KeyGen<S> {
             Ok(()) => {
                 if self.all_contribution_received() {
                     if self.phase == Phase::Commitment {
-                        self.phase = Phase::Finalization;
+                        self.become_finalization();
                     } else {
                         return self.finalize_contributing_phase();
                     }
                 }
             }
             Err(AcknowledgmentFault::MissingPart) => {
-                // TODO: consider carry out caching internally.
                 debug!(
                     "{:?} MissingPart on Ack not causing a complain, /
                         return with error to trigger an outside cache",
@@ -603,9 +643,10 @@ impl<S: SecretId> KeyGen<S> {
         );
         // In case of ready, transit into `Finalization` phase.
         if self.is_ready() {
-            self.pending_complain_messages.clear();
-            self.phase = Phase::Finalization;
+            self.become_finalization();
         }
+
+        self.pending_messags.clear();
         Ok(mem::take(&mut self.pending_complain_messages))
     }
 
@@ -641,8 +682,20 @@ impl<S: SecretId> KeyGen<S> {
     ) -> Result<Vec<Message<S::PublicId>>, Error> {
         debug!("{:?} current phase is {:?}", self, self.phase);
         match self.phase {
-            Phase::Contribution => self.finalize_contributing_phase(),
-            Phase::Complaining => self.finalize_complaining_phase(rng),
+            Phase::Contribution => match self.finalize_contributing_phase() {
+                Ok(mut messages) => {
+                    messages.extend(self.poll_pending_messages(rng));
+                    Ok(messages)
+                }
+                Err(err) => Err(err),
+            },
+            Phase::Complaining => match self.finalize_complaining_phase(rng) {
+                Ok(mut messages) => {
+                    messages.extend(self.poll_pending_messages(rng));
+                    Ok(messages)
+                }
+                Err(err) => Err(err),
+            },
             Phase::Initialization => Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
                 actual: self.phase,
@@ -719,7 +772,7 @@ impl<S: SecretId> KeyGen<S> {
             }
             self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
         } else if self.is_ready() {
-            self.phase = Phase::Finalization;
+            self.become_finalization();
             return Ok(Vec::new());
         }
 
@@ -767,6 +820,12 @@ impl<S: SecretId> KeyGen<S> {
         Ok(Vec::new())
     }
 
+    fn become_finalization(&mut self) {
+        self.phase = Phase::Finalization;
+        self.pending_messags.clear();
+        self.pending_complain_messages.clear();
+    }
+
     /// Returns the index of the node, or `None` if it is unknown.
     fn node_index(&self, node_id: &S::PublicId) -> Option<u64> {
         self.pub_keys
@@ -806,7 +865,7 @@ impl<S: SecretId> KeyGen<S> {
 
     /// Returns the new secret key share and the public key set.
     pub fn generate_keys(&self) -> Option<(BTreeSet<S::PublicId>, Outcome)> {
-        if self.phase != Phase::Finalization {
+        if !self.is_finalized() {
             return None;
         }
 
@@ -981,6 +1040,7 @@ impl<S: SecretId> KeyGen<S> {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),
             pending_complain_messages: Vec::new(),
+            pending_messags: Vec::new(),
         }
     }
 }

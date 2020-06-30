@@ -12,7 +12,7 @@ use crate::key_gen::outcome::Outcome;
 use crate::key_gen::{Error, KeyGen, Phase};
 use bincode::{deserialize, serialize};
 use bytes::Bytes;
-use crossbeam_channel::{tick, unbounded, Receiver};
+use crossbeam_channel::{after, unbounded, Receiver};
 use log::{info, trace};
 use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
 use rand::{thread_rng, Rng, RngCore};
@@ -391,11 +391,11 @@ impl Inner {
         let (tx, rx) = channel();
         let _ = thread::spawn(move || {
             #[cfg(not(test))]
-            let ticker = tick(Duration::from_millis(WAITING_TIME)); // 2 minutes
+            let ticker = after(Duration::from_millis(WAITING_TIME)); // 2 minutes
 
             // We don't have to wait in tests as we wait for completion of message exchanges beforehand
             #[cfg(test)]
-            let ticker = tick(Duration::from_millis(1_000)); // 1 second
+            let ticker = after(Duration::from_millis(1_000)); // 1 second
             {
                 ticker.recv().unwrap();
                 tx.send(()).unwrap()
