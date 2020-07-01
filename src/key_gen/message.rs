@@ -45,12 +45,20 @@ pub enum Message<P: PublicId> {
 
 impl<P: PublicId> fmt::Debug for Message<P> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Message::Initialization { key_gen_id, .. } => {
-                write!(formatter, "Initialization({})", key_gen_id)
-            }
+        match &*self {
+            Message::Initialization {
+                key_gen_id,
+                member_list,
+                ..
+            } => write!(
+                formatter,
+                "Initialization({:?} - {:?})",
+                member_list, key_gen_id
+            ),
             Message::Proposal { key_gen_id, .. } => write!(formatter, "Proposal({})", key_gen_id),
-            Message::Complaint { key_gen_id, .. } => write!(formatter, "Complaint({})", key_gen_id),
+            Message::Complaint {
+                key_gen_id, target, ..
+            } => write!(formatter, "Complaint({} - {})", key_gen_id, target),
             Message::Justification { key_gen_id, .. } => {
                 write!(formatter, "Justification({})", key_gen_id)
             }

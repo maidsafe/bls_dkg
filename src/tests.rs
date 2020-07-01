@@ -112,16 +112,23 @@ mod test {
         }
 
         // Wait for the Quic threads to finish the DKG process
-        // 1 successful session of DKG with 7 Nodes approximately takes 80 seconds to complete.
-        // Duration increases as the number of nodes increase, therefore we increase it for every 3 nodes
         let len = members.len();
-        if len <= NODE_NUM {
-            sleep(Duration::from_secs(SLEEPING_PERIOD));
+        let barrier = if len <= NODE_NUM {
+            SLEEPING_PERIOD
         } else if len > NODE_NUM && len <= NODE_NUM + 3 {
-            sleep(Duration::from_secs(SLEEPING_PERIOD + 60));
+            SLEEPING_PERIOD + 60
         } else {
-            sleep(Duration::from_secs(SLEEPING_PERIOD + 90));
+            SLEEPING_PERIOD + 90
+        };
+        let mut tick = 0;
+        while tick < barrier {
+            tick += 1;
+            sleep(Duration::from_secs(1));
+            if members.iter().all(|member| Ok(true) == member.is_ready()) {
+                return;
+            }
         }
+        panic!("Cannot reach DKG consensus after {:?} seconds", barrier);
     }
 
     #[test]
@@ -276,16 +283,17 @@ mod test {
     fn churn_test() {
         let mut rng = rand::thread_rng();
 
-        let initial_num = 3;
+        let total = 5;
+        let initial_num = 2;
         let (_ids, mut members, mut map) = create_members(initial_num, &mut rng);
 
         let mut rounds = initial_num;
 
-        // Starting with 3 nodes, rounds are incremented when new nodes are added.
-        // We will be testing with lesser number of nodes and rounds as churns tests can take a while to
-        // complete and can block the CI
-        while rounds < 7 {
-            if members.len() < NODE_NUM - 3 {
+        // Starting with 2 nodes, rounds are incremented when new nodes are added.
+        // Testing with less number of nodes and rounds as churns tests can take a while to
+        // complete and could block the CI.
+        while rounds < total {
+            if members.len() < total - initial_num {
                 // Create a new Node
                 let mut config = Config::default();
                 config.ip = Some(IP_LOCAL_HOST);

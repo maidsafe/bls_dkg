@@ -12,14 +12,13 @@ use crate::key_gen::outcome::Outcome;
 use crate::key_gen::{Error, KeyGen, Phase};
 use bincode::{deserialize, serialize};
 use bytes::Bytes;
-use crossbeam_channel::{unbounded, Receiver};
+use crossbeam_channel::{after, unbounded, Receiver};
 use log::{info, trace};
-use quic_p2p::{Builder, Config, Event, Peer, QuicP2p, QuicP2pError, Token};
+use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
 use rand::{thread_rng, Rng, RngCore};
-use schedule_recv::periodic_ms;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
@@ -28,7 +27,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// Time to wait before starting `timed_phase_transition` in milliseconds
-pub const WAITING_TIME: u32 = 120_000; // 2 minutes - max time for for a session with 7 Members to finish exchanging Contribution messages
+pub const WAITING_TIME: u64 = 120_000; // 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages
 
 /// Signing and verification.
 pub mod signing {
@@ -52,10 +51,13 @@ impl Member {
         let (node_tx, node_rx) = unbounded::<Event>();
         let (client_tx, _client_rx) = unbounded();
 
-        let quic_p2p = Builder::new(quic_p2p::EventSenders { node_tx, client_tx })
-            .with_config(config)
-            .build()
-            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+        let quic_p2p = QuicP2p::with_config(
+            quic_p2p::EventSenders { node_tx, client_tx },
+            Some(config),
+            VecDeque::new(),
+            false,
+        )
+        .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
         let inner = Inner {
             quic_p2p,
@@ -123,7 +125,7 @@ impl Member {
     /// Check if our node is ready to generate Keys safely
     pub fn is_ready(&self) -> Result<bool, Error> {
         if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
-            Ok(key_gen.is_ready())
+            Ok(key_gen.is_finalized())
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
@@ -373,11 +375,11 @@ impl Inner {
     }
 
     fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
+        let serialized_msg =
+            serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
+        let msg = Bytes::from(serialized_msg);
         for (_, socket_addr) in self.group.iter() {
             let token = rand::thread_rng().gen();
-            let serialized_msg =
-                serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
-            let msg = Bytes::from(serialized_msg.as_slice());
             self.quic_p2p
                 .send(Peer::Node(*socket_addr), msg.clone(), token)
         }
@@ -389,13 +391,13 @@ impl Inner {
         let (tx, rx) = channel();
         let _ = thread::spawn(move || {
             #[cfg(not(test))]
-            let tick = periodic_ms(WAITING_TIME); // 2 minutes
+            let ticker = after(Duration::from_millis(WAITING_TIME)); // 2 minutes
 
             // We don't have to wait in tests as we wait for completion of message exchanges beforehand
             #[cfg(test)]
-            let tick = periodic_ms(1_000); // 1 seconds
+            let ticker = after(Duration::from_millis(1_000)); // 1 second
             {
-                tick.recv().unwrap();
+                ticker.recv().unwrap();
                 tx.send(()).unwrap()
             }
         });
