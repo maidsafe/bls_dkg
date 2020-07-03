@@ -39,6 +39,27 @@ jobs:
       - shell: bash
         run: ./scripts/clippy
 
+      # Run cargo tarpaulin & push result to coveralls.io
+      - name: rust-tarpaulin code coverage check
+        uses: actions-rs/tarpaulin@master
+        with:
+<<<<<<< HEAD
+          args: '-v --release --out Lcov'
+=======
+          args: '-v -t 1000 --out Lcov'
+>>>>>>> 37fcc46... chore(ci): gather and publish code coverage stats from PRs
+      - name: Push code coverage results to coveralls.io
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel: true
+          path-to-lcov: ./lcov.info
+      - name: Coveralls Finished
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
