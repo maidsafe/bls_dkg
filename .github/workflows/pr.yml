@@ -1,9 +1,10 @@
-# This is a basic workflow to help you get started with Actions
+# PR workflow.
+#
+# Runs full suite of checks, with warnings treated as errors.
+# Gather code coverage stats and publish them on coveralls.io.
 
-name: CI
+name: PR
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   pull_request:
     branches: [ master ]
@@ -15,25 +16,33 @@ env:
   # Deny all compiler warnings.
   RUSTFLAGS: "-D warnings"
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  clippy:
-    name: Rustfmt-Clippy
+  checks:
+    name: Clippy, fmt & code coverage checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+      # Install Rust and required components
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
           components: rustfmt, clippy
+
       # Check if the code is formatted correctly.
-      - uses: actions-rs/cargo@v1
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      # Cache.
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
         with:
-          command: fmt
-          args: --all -- --check
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
       # Run Clippy.
       - shell: bash
@@ -43,11 +52,7 @@ jobs:
       - name: rust-tarpaulin code coverage check
         uses: actions-rs/tarpaulin@master
         with:
-<<<<<<< HEAD
           args: '-v --release --out Lcov'
-=======
-          args: '-v -t 1000 --out Lcov'
->>>>>>> 37fcc46... chore(ci): gather and publish code coverage stats from PRs
       - name: Push code coverage results to coveralls.io
         uses: coverallsapp/github-action@master
         with:
@@ -67,7 +72,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+      # Install Rust
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -75,26 +81,18 @@ jobs:
           override: true
 
       # Generate Cargo.lock, needed for the cache.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: generate-lockfile
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
 
       # Cache.
-      - name: Cache cargo registry
-        uses: actions/cache@v1
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
       # Run tests.
       - shell: bash
