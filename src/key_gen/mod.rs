@@ -27,8 +27,9 @@ use std::{
     fmt::{self, Debug, Formatter},
     mem,
 };
-use threshold_crypto::pairing::{CurveAffine, Field};
 use threshold_crypto::{
+    ff::Field,
+    group::CurveAffine,
     poly::{BivarCommitment, BivarPoly, Poly},
     serde_impl::FieldWrap,
     Fr, G1Affine, SecretKeyShare,
