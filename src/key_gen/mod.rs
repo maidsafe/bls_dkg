@@ -316,7 +316,7 @@ pub struct KeyGen<S: SecretId> {
     /// Pending complain messages.
     pending_complain_messages: Vec<Message<S::PublicId>>,
     /// Pending messages that cannot handle yet.
-    pending_messags: Vec<Message<S::PublicId>>,
+    pending_messages: Vec<Message<S::PublicId>>,
 }
 
 impl<S: SecretId> KeyGen<S> {
@@ -348,7 +348,7 @@ impl<S: SecretId> KeyGen<S> {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone(), threshold),
             pending_complain_messages: Vec::new(),
-            pending_messags: Vec::new(),
+            pending_messages: Vec::new(),
         };
 
         Ok((
@@ -382,7 +382,7 @@ impl<S: SecretId> KeyGen<S> {
                 Ok(msgs)
             }
             Err(Error::UnexpectedPhase { .. }) | Err(Error::MissingPart) => {
-                self.pending_messags.push(msg);
+                self.pending_messages.push(msg);
                 Ok(Vec::new())
             }
             Err(_) => result,
@@ -390,16 +390,16 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message<S::PublicId>> {
-        let pending_messags = std::mem::replace(&mut self.pending_messags, Vec::new());
+        let pending_messages = std::mem::replace(&mut self.pending_messages, Vec::new());
         let mut msgs = Vec::new();
-        for message in pending_messags {
+        for message in pending_messages {
             if let Ok(new_messages) = self.process_message(rng, message.clone()) {
                 if self.is_finalized() {
                     return Vec::new();
                 }
                 msgs.extend(new_messages);
             } else {
-                self.pending_messags.push(message);
+                self.pending_messages.push(message);
             }
         }
         msgs
@@ -647,7 +647,7 @@ impl<S: SecretId> KeyGen<S> {
             self.become_finalization();
         }
 
-        self.pending_messags.clear();
+        self.pending_messages.clear();
         Ok(mem::take(&mut self.pending_complain_messages))
     }
 
@@ -823,7 +823,7 @@ impl<S: SecretId> KeyGen<S> {
 
     fn become_finalization(&mut self) {
         self.phase = Phase::Finalization;
-        self.pending_messags.clear();
+        self.pending_messages.clear();
         self.pending_complain_messages.clear();
     }
 
@@ -1041,7 +1041,7 @@ impl<S: SecretId> KeyGen<S> {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),
             pending_complain_messages: Vec::new(),
-            pending_messags: Vec::new(),
+            pending_messages: Vec::new(),
         }
     }
 }
