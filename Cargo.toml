@@ -18,11 +18,15 @@ bytes = { version = "~0.5.4", features = ["serde"] }
 crossbeam-channel = "~0.4.2"
 ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.3", features = ["serde"] }
 err-derive = "~0.2.4"
+futures = "~0.3.5"
 itertools = "~0.9.0"
 log = "~0.4.8"
+tokio = { version="~0.2.21", features=["rt-core", "blocking", "stream", "rt-util"] }
 rand = "~0.7.3"
 rand_core = "~0.5.1"
 serde = "1.0.106"
 serde_derive = "1.0.106"
 threshold_crypto = "~0.4.0"
-quic-p2p = { version = "~0.7.0", features = ["upnp"] }
+#quic-p2p = { version = "~0.7.0", features = ["upnp"] }
+quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
+#quic-p2p = { path = "../quic-p2p" }

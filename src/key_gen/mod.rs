@@ -18,7 +18,7 @@ mod tests;
 use crate::id::{PublicId, SecretId};
 use bincode::{self, deserialize, serialize};
 use encryptor::{Encryptor, Iv, Key};
-use message::Message;
+pub use message::Message;
 use outcome::Outcome;
 use rand::{self, RngCore};
 use serde_derive::{Deserialize, Serialize};
@@ -62,6 +62,12 @@ pub enum Error {
     /// Ack on a missed part.
     #[error(display = "ACK on missed part")]
     MissingPart,
+}
+
+impl From<quic_p2p::Error> for Error {
+    fn from(e: quic_p2p::Error) -> Self {
+        Self::QuicP2P(e.to_string())
+    }
 }
 
 impl From<Box<bincode::ErrorKind>> for Error {
