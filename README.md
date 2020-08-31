@@ -1,4 +1,4 @@
-# BLS-DKG
+# BLS DKG
 Implementation of a BLS DKG mechanism, requires signing key, encryption key and SocketAddr of participants
 
 Based on the excellent description as found [here](https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol). This implementation forces participation and honesty. Therefore it can be used in hostile and friendly environments where `m` must be `<=n`. The participant IDs must be sortable to allow all participants to select the same (threshold + 1) `t+1` participants in key generation.
