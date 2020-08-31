@@ -1,7 +1,6 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "Implementation of a DKG"
-documentation = ""
 edition = "2018"
 exclude = [""]
 homepage = "https://maidsafe.net"
