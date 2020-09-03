@@ -52,7 +52,28 @@ pub struct Member {
 }
 
 impl Member {
-    /// Setup a Member to start DKG
+    /// Set up a Member object and initialize a Quic-p2p `Endpoint` for listening to incoming connections.
+    ///
+    /// # Example
+    ///
+    /// Create a new Member
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use quic_p2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// let _member = Member::new(config, &mut rng).unwrap();
+    /// # Ok(()) } ); }
+    /// ```
     pub fn new<R: RngCore>(config: Config, rng: &mut R) -> Result<Self, Error> {
         let node = KeyInfo::new();
 
@@ -76,6 +97,33 @@ impl Member {
     }
 
     /// Connects to every member in the given group
+    ///
+    /// # Example
+    ///
+    /// Create two new Members and connect them with each other
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use quic_p2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member2 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// member2.connect_to_group(map).await?;
+    /// # Ok(()) } ); }
+    /// ```
     pub async fn connect_to_group(
         &mut self,
         group: HashMap<NodeID, SocketAddr>,
@@ -87,22 +135,53 @@ impl Member {
         self.group = group;
 
         for (id, socket_addr) in self.group.iter() {
-            println!("Trying to connect");
             let (_, connection) = self
                 .quic_p2p
                 .connect_to(socket_addr)
                 .await
                 .map_err(|e| Error::QuicP2P(e.to_string()))?;
-            println!("CONNECTED!");
             let _ = self
                 .connections
                 .insert(id.clone(), Arc::new(Mutex::new(connection)));
         }
-
+        // TODO: Start a loop to listen and handle incoming messages
         Ok(())
     }
 
     /// Initialize DKG with the connected nodes and returns back the proposal
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use quic_p2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    ///
+    /// // Set the threshold for the DKG session
+    /// let _initial_proposal = member3.init_dkg(2);
+    /// # Ok(()) } ); }
+    /// ```
     pub fn init_dkg(&mut self, threshold: usize) -> Result<Message<NodeID>, Error> {
         // Extract public_keys of the nodes from the given group for DKG
         let pub_keys = self.group.keys().fold(BTreeSet::new(), |mut set, key| {
@@ -118,6 +197,39 @@ impl Member {
     }
 
     /// Broadcast given message to all the connected peers
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group
+    /// ```no_run
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use quic_p2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    /// let initial_proposal = member3.init_dkg(2)?;
+    ///
+    /// member3.broadcast(initial_proposal).await?;
+    /// # Ok(()) } ); }
+    /// ```
     pub async fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
         let mut tasks = Vec::default();
         for conn in self.connections.values() {
@@ -133,7 +245,9 @@ impl Member {
         Ok(())
     }
 
-    /// Begins timed phase transition
+    /// Begins timed phase transition. If we don't get quorum number of responses for a message
+    /// after a certain period of time, we must force the Member to move on to the next phase in
+    /// the session.
     pub fn start_timed_phase_transition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
         let (tx, rx) = channel();
         let _ = thread::spawn(move || {
@@ -189,7 +303,7 @@ impl Member {
         }
     }
 
-    /// Returns the Phase the Node is at.
+    /// Returns the Phase the Node is currently at.
     pub fn phase(&self) -> Result<Phase, Error> {
         if let Some(ref key_gen) = self.key_gen {
             Ok(key_gen.phase())
@@ -198,9 +312,47 @@ impl Member {
         }
     }
 
-    // Dispatches the incoming DKG message to the Key_Gen instance
-    pub async fn handle_incoming(&mut self, incoming: Vec<Bytes>) -> Vec<Message<NodeID>> {
-        let mut replies = vec![];
+    /// Dispatches the incoming DKG message to the Key_Gen instance
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group and handle the incoming messages
+    /// ```no_run
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use quic_p2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { use std::thread::sleep;
+    /// use tokio::time::Duration;
+    /// let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    /// let initial_proposal = member3.init_dkg(2)?;
+    ///
+    /// // This would technically create an avalanche of messages to complete the DKG session
+    /// member3.broadcast(initial_proposal).await?;
+    /// sleep(Duration::from_secs(5)); // Wait for the session to finish
+    ///
+    /// assert!(member3.is_ready());
+    /// # Ok(()) } ); }
+    /// ```
+    pub async fn handle_incoming(&mut self, incoming: Vec<Bytes>) -> Result<(), Error> {
         for message in incoming {
             match deserialize(&message) {
                 Ok(msg) => {
@@ -211,7 +363,7 @@ impl Member {
                                 if !self.non_responsive {
                                     for message in list {
                                         // Broadcast the reply messages right away
-                                        replies.push(message);
+                                        self.broadcast(message).await?;
                                     }
                                 }
                             }
@@ -224,7 +376,12 @@ impl Member {
                 Err(e) => trace!("Error: {:#?}", e),
             }
         }
-        replies
+        Ok(())
+    }
+
+    /// Fetches our quic connection's socket address
+    pub fn our_socket_addr(&self) -> SocketAddr {
+        self.end_point.local_address()
     }
 }
 
@@ -237,11 +394,6 @@ impl Member {
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
-    }
-
-    /// Fetches our quic connection's socket address
-    pub fn our_socket_addr(&self) -> SocketAddr {
-        self.end_point.local_address()
     }
 
     /// Set the given node as non_responsive
@@ -284,6 +436,7 @@ impl PartialOrd for Member {
     }
 }
 
+/// The Public ID of a Member participating in a DKG session.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub struct NodeID {
     name: String, // TODO: To be replaced by XorName?
