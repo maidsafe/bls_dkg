@@ -15,16 +15,19 @@ use bytes::Bytes;
 use crossbeam_channel::after;
 use futures::lock::Mutex;
 use log::trace;
-use quic_p2p::{Config, Connection, Endpoint, QuicP2p};
+use quic_p2p::{Config, Connection, Endpoint, IncomingConnections, IncomingMessages, QuicP2p};
 use rand::{thread_rng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::mpsc::channel;
-use std::sync::Arc;
+use std::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Arc,
+};
 use std::thread;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 
 /// Time to wait before starting `timed_phase_transition` in milliseconds
 pub const WAITING_TIME: u64 = 120_000; // 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages
@@ -49,6 +52,7 @@ pub struct Member {
     key_gen: Option<KeyGen<KeyInfo>>,
     our_keys: KeyInfo,
     non_responsive: bool,
+    listener_pool: Option<Arc<Vec<JoinHandle<()>>>>,
 }
 
 impl Member {
@@ -93,6 +97,7 @@ impl Member {
             key_gen: None,
             our_keys: node,
             non_responsive: false,
+            listener_pool: None,
         })
     }
 
@@ -133,9 +138,10 @@ impl Member {
         self.disconnect_from_all().await;
 
         self.group = group;
-
+        let mut handles = vec![];
+        let mut receivers = vec![];
         for (id, socket_addr) in self.group.iter() {
-            let (_, connection) = self
+            let (end_point, connection) = self
                 .quic_p2p
                 .connect_to(socket_addr)
                 .await
@@ -143,8 +149,20 @@ impl Member {
             let _ = self
                 .connections
                 .insert(id.clone(), Arc::new(Mutex::new(connection)));
+
+            let incoming = end_point
+                .listen()
+                .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+            let (tx, rx) = channel();
+            let handle = accept_loop(incoming, tx);
+            handles.push(handle);
+            receivers.push(rx);
         }
-        // TODO: Start a loop to listen and handle incoming messages
+        self.listener_pool = Some(Arc::new(handles));
+        // self.receiver_pool = Some(receivers);
+
+        let _ = self.start_listening(receivers);
+
         Ok(())
     }
 
@@ -194,6 +212,17 @@ impl Member {
 
         self.key_gen = Some(key_gen);
         Ok(broadcast_msg)
+    }
+
+    async fn start_listening(&mut self, receivers: Vec<Receiver<Bytes>>) {
+        loop {
+            for recv in &receivers {
+                while let Ok(msg) = recv.recv() {
+                    // Safe to unwrap
+                    self.handle_incoming(msg).await.unwrap();
+                }
+            }
+        }
     }
 
     /// Broadcast given message to all the connected peers
@@ -352,29 +381,27 @@ impl Member {
     /// assert!(member3.is_ready());
     /// # Ok(()) } ); }
     /// ```
-    pub async fn handle_incoming(&mut self, incoming: Vec<Bytes>) -> Result<(), Error> {
-        for message in incoming {
-            match deserialize(&message) {
-                Ok(msg) => {
-                    let mut rng = thread_rng();
-                    if let Some(ref mut key_gen) = self.key_gen {
-                        match key_gen.handle_message(&mut rng, msg) {
-                            Ok(list) => {
-                                if !self.non_responsive {
-                                    for message in list {
-                                        // Broadcast the reply messages right away
-                                        self.broadcast(message).await?;
-                                    }
+    pub async fn handle_incoming(&mut self, incoming: Bytes) -> Result<(), Error> {
+        match deserialize(&incoming) {
+            Ok(msg) => {
+                let mut rng = thread_rng();
+                if let Some(ref mut key_gen) = self.key_gen {
+                    match key_gen.handle_message(&mut rng, msg) {
+                        Ok(list) => {
+                            if !self.non_responsive {
+                                for message in list {
+                                    // Broadcast the reply messages right away
+                                    self.broadcast(message).await?;
                                 }
                             }
-                            Err(e) => trace!("Error: {:#?}", e),
                         }
-                    } else {
-                        trace!("Error: No Keygen instance initiated")
+                        Err(e) => trace!("Error: {:#?}", e),
                     }
+                } else {
+                    trace!("Error: No Keygen instance initiated")
                 }
-                Err(e) => trace!("Error: {:#?}", e),
             }
+            Err(e) => trace!("Error: {:#?}", e),
         }
         Ok(())
     }
@@ -506,5 +533,28 @@ impl SecretId for KeyInfo {
 impl Default for KeyInfo {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn accept_loop(mut incoming: IncomingConnections, tx: Sender<Bytes>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(msg) = incoming.next().await {
+            let _handle = tokio::spawn(connection_loop(msg, tx.clone()));
+        }
+    })
+}
+
+async fn connection_loop(mut stream: IncomingMessages, tx: Sender<Bytes>) {
+    while let Some(message) = &stream.next().await {
+        println!("RECEIVED SOME MESSAGE!");
+        match message {
+            quic_p2p::Message::UniStream { .. } => {
+                panic!("ERROR: Got Unistream!");
+            }
+            quic_p2p::Message::BiStream { bytes, .. } => {
+                println!("GOT MESSAGE: {:?}", bytes);
+                let _ = tx.send(bytes.clone());
+            }
+        }
     }
 }

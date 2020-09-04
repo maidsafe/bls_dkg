@@ -13,11 +13,10 @@ mod test {
     use crate::member::NodeID;
     use crate::Member;
     use bincode::serialize;
-    use bytes::Bytes;
     use itertools::Itertools;
-    use quic_p2p::{Config, IncomingConnections, IncomingMessages, QuicP2p};
+    use quic_p2p::Config;
     use rand::{thread_rng, Rng, RngCore};
-    use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::thread::sleep;
     use std::time::Duration;
@@ -103,6 +102,7 @@ mod test {
         // Broadcast all the messages
         for (x, member) in members.iter_mut().enumerate() {
             if !member.is_non_responsive() {
+                println!("BROADCASTING!");
                 member.broadcast(proposals[x].clone()).await.unwrap();
             }
         }
@@ -337,56 +337,5 @@ mod test {
         let _ = map.insert(mem1.id(), mem1.our_socket_addr());
         mem2.connect_to_group(map).await.unwrap();
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_qp2p() -> Result<(), Error> {
-        let mut config = Config::default();
-        config.ip = Some(IP_LOCAL_HOST);
-        config.port = Some(0);
-
-        let qp2p1 = QuicP2p::with_config(Some(config.clone()), VecDeque::new(), false)?;
-        let endpoint = qp2p1.new_endpoint()?;
-
-        let mut qp2p2 = QuicP2p::with_config(Some(config), VecDeque::new(), false)?;
-
-        let (e, _conn) = qp2p2.connect_to(&endpoint.local_address()).await?;
-        let q1 = endpoint.connect_to(&e.local_address()).await?;
-        let mut incoming = e.listen()?;
-
-        q1.send_only(Bytes::copy_from_slice(b"HHELLO WORLD"))
-            .await?;
-        println!("PRE LOOPPPPP");
-        q1.send_only(Bytes::copy_from_slice(
-            b"HEYYYYY YOU LIL PIECE OF SHIT YOU BETTER WORK",
-        ))
-        .await?;
-        accept_loop(&mut incoming).await;
-        println!("POST LOOPPPP POST MESSAGE");
-        q1.send_only(Bytes::copy_from_slice(b"AND THIS TOOOO"))
-            .await?;
-        sleep(Duration::from_secs(1));
-        Ok(())
-    }
-
-    async fn accept_loop(incoming: &mut IncomingConnections) {
-        while let Some(msg) = incoming.next().await {
-            let _handle = tokio::spawn(connection_loop(msg)).await;
-        }
-    }
-
-    async fn connection_loop(mut stream: IncomingMessages) {
-        while let Some(message) = &stream.next().await {
-            println!("RECEIVED SOME MESSAGE!");
-            match message {
-                quic_p2p::Message::UniStream { .. } => {
-                    panic!("ERROR: Got Unistream!");
-                }
-                quic_p2p::Message::BiStream { bytes, .. } => {
-                    // let message: Result<Message<NodeID>, Error> = deserialize(&bytes).map_err(|e|Error::Serialization(e.to_string()));
-                    println!("GOT MESSAGE: {:?}", bytes.to_ascii_uppercase());
-                }
-            }
-        }
     }
 }
