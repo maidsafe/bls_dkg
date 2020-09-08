@@ -27,6 +27,4 @@ rand_core = "~0.5.1"
 serde = "1.0.106"
 serde_derive = "1.0.106"
 threshold_crypto = "~0.4.0"
-#quic-p2p = { version = "~0.7.0", features = ["upnp"] }
-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
-#quic-p2p = { path = "../quic-p2p" }
+qp2p = "~0.8.1"

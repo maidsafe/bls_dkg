@@ -47,7 +47,7 @@ pub enum Error {
     /// Failed to serialize message.
     #[error(display = "Serialization error: {}", _0)]
     Serialization(String),
-    /// Network error from Quic-P2P.
+    /// Network error from Quic P2P.
     #[error(display = "QuicP2P error: {}", _0)]
     QuicP2P(String),
     /// Failed to encrypt message.
@@ -64,8 +64,8 @@ pub enum Error {
     MissingPart,
 }
 
-impl From<quic_p2p::Error> for Error {
-    fn from(e: quic_p2p::Error) -> Self {
+impl From<qp2p::Error> for Error {
+    fn from(e: qp2p::Error) -> Self {
         Self::QuicP2P(e.to_string())
     }
 }

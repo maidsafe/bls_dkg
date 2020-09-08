@@ -15,7 +15,7 @@ use bytes::Bytes;
 use crossbeam_channel::after;
 use futures::lock::Mutex;
 use log::trace;
-use quic_p2p::{Config, Connection, Endpoint, IncomingConnections, IncomingMessages, QuicP2p};
+use qp2p::{Config, Connection, Endpoint, IncomingConnections, IncomingMessages, QuicP2p};
 use rand::{thread_rng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -42,9 +42,9 @@ pub mod encryption {
     pub use ed25519_dalek::{PublicKey, SecretKey};
 }
 
-/// A standalone object that can take start and/or take part in a BLS-DKG Session with Quic-p2p as it's transport layer.
+/// A standalone object that can take start and/or take part in a BLS-DKG Session with qp2p as it's transport layer.
 pub struct Member {
-    quic_p2p: QuicP2p,
+    qp2p: QuicP2p,
     end_point: Endpoint,
     _id: u64,
     group: HashMap<NodeID, SocketAddr>,
@@ -56,7 +56,7 @@ pub struct Member {
 }
 
 impl Member {
-    /// Set up a Member object and initialize a Quic-p2p `Endpoint` for listening to incoming connections.
+    /// Set up a Member object and initialize a qp2p `Endpoint` for listening to incoming connections.
     ///
     /// # Example
     ///
@@ -64,7 +64,7 @@ impl Member {
     /// ```
     /// # extern crate tokio; use bls_dkg::key_gen::Error;
     /// use rand::thread_rng;
-    /// use quic_p2p::Config;
+    /// use qp2p::Config;
     /// use bls_dkg::Member;
     /// use std::net::{IpAddr, Ipv4Addr};
     /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
@@ -81,15 +81,15 @@ impl Member {
     pub fn new<R: RngCore>(config: Config, rng: &mut R) -> Result<Self, Error> {
         let node = KeyInfo::new();
 
-        let quic_p2p = QuicP2p::with_config(Some(config), VecDeque::new(), false)
+        let qp2p = QuicP2p::with_config(Some(config), VecDeque::new(), false)
             .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
-        let end_point = quic_p2p
+        let end_point = qp2p
             .new_endpoint()
             .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
         Ok(Self {
-            quic_p2p,
+            qp2p,
             end_point,
             _id: rng.gen(),
             group: Default::default(),
@@ -109,7 +109,7 @@ impl Member {
     /// ```
     /// # extern crate tokio; use bls_dkg::key_gen::Error;
     /// use rand::thread_rng;
-    /// use quic_p2p::Config;
+    /// use qp2p::Config;
     /// use bls_dkg::Member;
     /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
     /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
@@ -142,7 +142,7 @@ impl Member {
         let mut receivers = vec![];
         for (id, socket_addr) in self.group.iter() {
             let (end_point, connection) = self
-                .quic_p2p
+                .qp2p
                 .connect_to(socket_addr)
                 .await
                 .map_err(|e| Error::QuicP2P(e.to_string()))?;
@@ -175,7 +175,7 @@ impl Member {
     /// ```
     /// # extern crate tokio; use bls_dkg::key_gen::Error;
     /// use rand::thread_rng;
-    /// use quic_p2p::Config;
+    /// use qp2p::Config;
     /// use bls_dkg::Member;
     /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
     /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
@@ -234,7 +234,7 @@ impl Member {
     /// ```no_run
     /// # extern crate tokio; use bls_dkg::key_gen::Error;
     /// use rand::thread_rng;
-    /// use quic_p2p::Config;
+    /// use qp2p::Config;
     /// use bls_dkg::Member;
     /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
     /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
@@ -350,7 +350,7 @@ impl Member {
     /// ```no_run
     /// # extern crate tokio; use bls_dkg::key_gen::Error;
     /// use rand::thread_rng;
-    /// use quic_p2p::Config;
+    /// use qp2p::Config;
     /// use bls_dkg::Member;
     /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
     /// # #[tokio::main] async fn main() { use std::thread::sleep;
@@ -548,10 +548,10 @@ async fn connection_loop(mut stream: IncomingMessages, tx: Sender<Bytes>) {
     while let Some(message) = &stream.next().await {
         println!("RECEIVED SOME MESSAGE!");
         match message {
-            quic_p2p::Message::UniStream { .. } => {
+            qp2p::Message::UniStream { .. } => {
                 panic!("ERROR: Got Unistream!");
             }
-            quic_p2p::Message::BiStream { bytes, .. } => {
+            qp2p::Message::BiStream { bytes, .. } => {
                 println!("GOT MESSAGE: {:?}", bytes);
                 let _ = tx.send(bytes.clone());
             }
