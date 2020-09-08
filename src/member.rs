@@ -14,7 +14,7 @@ use bincode::{deserialize, serialize};
 use bytes::Bytes;
 use crossbeam_channel::{after, unbounded, Receiver};
 use log::{info, trace};
-use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
+use qp2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
 use rand::{thread_rng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -51,8 +51,8 @@ impl Member {
         let (node_tx, node_rx) = unbounded::<Event>();
         let (client_tx, _client_rx) = unbounded();
 
-        let quic_p2p = QuicP2p::with_config(
-            quic_p2p::EventSenders { node_tx, client_tx },
+        let qp2p = QuicP2p::with_config(
+            qp2p::EventSenders { node_tx, client_tx },
             Some(config),
             VecDeque::new(),
             false,
@@ -60,7 +60,7 @@ impl Member {
         .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
         let inner = Inner {
-            quic_p2p,
+            qp2p,
             id: rng.gen(),
             group: Default::default(),
             key_gen: None,
@@ -69,7 +69,7 @@ impl Member {
         };
         let arc_inner = Arc::new(Mutex::new(inner));
 
-        let _ = setup_quic_p2p_event_loop(&arc_inner, node_rx);
+        let _ = setup_qp2p_event_loop(&arc_inner, node_rx);
 
         Ok(Self { inner: arc_inner })
     }
@@ -174,7 +174,7 @@ impl Member {
         self.inner
             .lock()
             .unwrap()
-            .quic_p2p
+            .qp2p
             .our_connection_info()
             .map_err(|e| Error::QuicP2P(e.to_string()))
     }
@@ -291,7 +291,7 @@ impl Default for KeyInfo {
 }
 
 struct Inner {
-    quic_p2p: QuicP2p,
+    qp2p: QuicP2p,
     id: u64,
     group: HashMap<NodeID, SocketAddr>,
     key_gen: Option<KeyGen<KeyInfo>>,
@@ -332,7 +332,7 @@ impl Inner {
     // Connects to every Node in the group
     pub fn connect_to_all(&mut self) {
         for (_id, socket_addr) in self.group.iter() {
-            self.quic_p2p.connect_to(*socket_addr)
+            self.qp2p.connect_to(*socket_addr)
         }
     }
 
@@ -340,7 +340,7 @@ impl Inner {
     // Disconnects from every Node in the group
     pub fn disconnect_from_all(&mut self) {
         for (_id, socket_addr) in self.group.iter() {
-            self.quic_p2p.disconnect_from(*socket_addr)
+            self.qp2p.disconnect_from(*socket_addr)
         }
     }
 
@@ -380,8 +380,7 @@ impl Inner {
         let msg = Bytes::from(serialized_msg);
         for (_, socket_addr) in self.group.iter() {
             let token = rand::thread_rng().gen();
-            self.quic_p2p
-                .send(Peer::Node(*socket_addr), msg.clone(), token)
+            self.qp2p.send(Peer::Node(*socket_addr), msg.clone(), token)
         }
         Ok(())
     }
@@ -411,7 +410,7 @@ impl Inner {
 
     fn terminate(&mut self) {
         for (_nodeid, socket_addr) in self.group.iter() {
-            self.quic_p2p.disconnect_from(*socket_addr);
+            self.qp2p.disconnect_from(*socket_addr);
         }
     }
 
@@ -421,7 +420,7 @@ impl Inner {
         self.terminate()
     }
 
-    fn handle_quic_p2p_event(&mut self, event: Event) {
+    fn handle_qp2p_event(&mut self, event: Event) {
         use Event::*;
         match event {
             BootstrapFailure => {
@@ -466,10 +465,7 @@ impl Inner {
     }
 }
 
-fn setup_quic_p2p_event_loop(
-    inner: &Arc<Mutex<Inner>>,
-    event_rx: Receiver<Event>,
-) -> JoinHandle<()> {
+fn setup_qp2p_event_loop(inner: &Arc<Mutex<Inner>>, event_rx: Receiver<Event>) -> JoinHandle<()> {
     let inner_weak = Arc::downgrade(inner);
 
     thread::spawn(move || {
@@ -479,10 +475,10 @@ fn setup_quic_p2p_event_loop(
                 event => {
                     if let Some(inner) = inner_weak.upgrade() {
                         let mut inner = inner.lock().unwrap();
-                        inner.handle_quic_p2p_event(event);
+                        inner.handle_qp2p_event(event);
                     } else {
                         // Event loop got dropped
-                        trace!("Gracefully terminating quic-p2p event loop");
+                        trace!("Gracefully terminating qp2p event loop");
                         break;
                     }
                 }

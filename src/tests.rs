@@ -14,7 +14,7 @@ mod test {
     use crate::Member;
     use bincode::serialize;
     use itertools::Itertools;
-    use quic_p2p::Config;
+    use qp2p::Config;
     use rand::{thread_rng, Rng, RngCore};
     use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
