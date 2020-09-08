@@ -18,7 +18,7 @@ mod tests;
 use crate::id::{PublicId, SecretId};
 use bincode::{self, deserialize, serialize};
 use encryptor::{Encryptor, Iv, Key};
-use message::Message;
+pub use message::Message;
 use outcome::Outcome;
 use rand::{self, RngCore};
 use serde_derive::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ pub enum Error {
     /// Failed to serialize message.
     #[error(display = "Serialization error: {}", _0)]
     Serialization(String),
-    /// Network error from Quic-P2P.
+    /// Network error from Quic P2P.
     #[error(display = "QuicP2P error: {}", _0)]
     QuicP2P(String),
     /// Failed to encrypt message.
@@ -62,6 +62,12 @@ pub enum Error {
     /// Ack on a missed part.
     #[error(display = "ACK on missed part")]
     MissingPart,
+}
+
+impl From<qp2p::Error> for Error {
+    fn from(e: qp2p::Error) -> Self {
+        Self::QuicP2P(e.to_string())
+    }
 }
 
 impl From<Box<bincode::ErrorKind>> for Error {

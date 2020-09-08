@@ -9,12 +9,12 @@
 
 #[cfg(test)]
 mod test {
-    use crate::key_gen::Phase;
+    use crate::key_gen::{Error, Phase};
     use crate::member::NodeID;
     use crate::Member;
     use bincode::serialize;
     use itertools::Itertools;
-    use quic_p2p::Config;
+    use qp2p::Config;
     use rand::{thread_rng, Rng, RngCore};
     use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -26,7 +26,7 @@ mod test {
     const SLEEPING_PERIOD: u64 = 100; // Time(in seconds) required for successful completion of a DKG session with 7 nodes
     pub const IP_LOCAL_HOST: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
-    fn setup_members_and_init_dkg<R: RngCore>(
+    async fn setup_members_and_init_dkg<R: RngCore>(
         num: usize,
         non_responsives: BTreeSet<usize>,
         rng: &mut R,
@@ -36,7 +36,7 @@ mod test {
         // Sort them to follow KeyGen's indexing
         members.sort();
 
-        connect_and_initialize_dkg(&mut members, map, non_responsives, THRESHOLD);
+        connect_and_initialize_dkg(&mut members, map, non_responsives, THRESHOLD).await;
 
         (ids, members)
     }
@@ -66,25 +66,23 @@ mod test {
 
         // Generate Group's connection details
         for (i, member) in member_vec.iter_mut().enumerate() {
-            let addr = member.our_socket_addr().unwrap();
+            let addr = member.our_socket_addr();
             map.insert(id_vec[i].clone(), addr);
         }
 
         (id_vec, member_vec, map)
     }
 
-    fn connect_and_initialize_dkg(
+    async fn connect_and_initialize_dkg(
         members: &mut Vec<Member>,
         map: HashMap<NodeID, SocketAddr>,
         non_responsives: BTreeSet<usize>,
         threshold: usize,
     ) {
         for member in members.iter_mut() {
-            member.connect_to_group(map.clone())
+            member.connect_to_group(map.clone()).await.unwrap();
         }
-
-        // Wait for Nodes to connect to each other
-        sleep(Duration::from_secs(20));
+        println!("Connected Successfully!");
 
         let mut proposals = vec![];
         // Initialize DKG for all the Nodes
@@ -97,17 +95,15 @@ mod test {
         for (i, member) in members.iter_mut().enumerate() {
             if non_responsives.contains(&i) {
                 member.set_as_non_responsive();
-                member.disconnect_from_all();
+                member.disconnect_from_all().await;
             }
         }
-
-        // Wait for Non-responsive members to close connections
-        sleep(Duration::from_secs(5));
 
         // Broadcast all the messages
         for (x, member) in members.iter_mut().enumerate() {
             if !member.is_non_responsive() {
-                member.broadcast(proposals[x].clone()).unwrap();
+                println!("BROADCASTING!");
+                member.broadcast(proposals[x].clone()).await.unwrap();
             }
         }
 
@@ -131,10 +127,11 @@ mod test {
         panic!("Cannot reach DKG consensus after {:?} seconds", barrier);
     }
 
-    #[test]
-    fn member_basics_test() {
+    #[tokio::test]
+    async fn member_basics_test() {
         let mut rng = thread_rng();
-        let (_, mut members) = setup_members_and_init_dkg(NODE_NUM, Default::default(), &mut rng);
+        let (_, mut members) =
+            setup_members_and_init_dkg(NODE_NUM, Default::default(), &mut rng).await;
 
         // Check for Phases, Contributions and Readiness
         for member in members.iter_mut().take(NODE_NUM) {
@@ -143,7 +140,7 @@ mod test {
             assert!(member.is_ready().unwrap());
         }
 
-        // Convert members into an ordered BTreeSet for testing.
+        // Convert members into an ordered BTreeSet.
         let set: BTreeSet<Member> = members.drain(..).collect();
 
         threshold_sign_verification(&set);
@@ -279,8 +276,8 @@ mod test {
         }
     }
 
-    #[test]
-    fn churn_test() {
+    #[tokio::test]
+    async fn churn_test() {
         let mut rng = rand::thread_rng();
 
         let total = 5;
@@ -299,9 +296,9 @@ mod test {
                 config.ip = Some(IP_LOCAL_HOST);
                 config.port = Some(0);
 
-                let mut member = Member::new(config, &mut rng).unwrap();
+                let member = Member::new(config, &mut rng).unwrap();
                 let id = member.id();
-                let addr = member.our_socket_addr().unwrap();
+                let addr = member.our_socket_addr();
                 members.push(member);
                 map.insert(id, addr);
                 rounds += 1;
@@ -310,17 +307,35 @@ mod test {
                 let idx = rng.gen_range(0, members.len());
                 let id = members[idx].id();
                 // Close connections and drop the node.
-                members[idx].close();
+                members[idx].close().await;
                 let _drop_member = members.remove(idx);
                 assert!(map.remove(&id).is_some());
             }
 
             let threshold: usize = members.len() * 2 / 3;
-            connect_and_initialize_dkg(&mut members, map.clone(), BTreeSet::new(), threshold);
+            connect_and_initialize_dkg(&mut members, map.clone(), BTreeSet::new(), threshold).await;
 
             assert!(members
                 .iter_mut()
                 .all(|member| member.generate_keys().is_ok()));
         }
+    }
+
+    #[tokio::test]
+    async fn connectivity() -> Result<(), Error> {
+        let mut rng = thread_rng();
+
+        let mut config = Config::default();
+        config.ip = Some(IP_LOCAL_HOST);
+        config.port = Some(0);
+
+        let mem1 = Member::new(config.clone(), &mut rng)?;
+
+        let mut mem2 = Member::new(config, &mut rng)?;
+
+        let mut map = HashMap::new();
+        let _ = map.insert(mem1.id(), mem1.our_socket_addr());
+        mem2.connect_to_group(map).await.unwrap();
+        Ok(())
     }
 }

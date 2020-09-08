@@ -12,19 +12,22 @@ use crate::key_gen::outcome::Outcome;
 use crate::key_gen::{Error, KeyGen, Phase};
 use bincode::{deserialize, serialize};
 use bytes::Bytes;
-use crossbeam_channel::{after, unbounded, Receiver};
-use log::{info, trace};
-use quic_p2p::{Config, Event, Peer, QuicP2p, QuicP2pError, Token};
+use crossbeam_channel::after;
+use futures::lock::Mutex;
+use log::trace;
+use qp2p::{Config, Connection, Endpoint, IncomingConnections, IncomingMessages, QuicP2p};
 use rand::{thread_rng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Arc,
+};
 use std::thread;
-use std::thread::JoinHandle;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 
 /// Time to wait before starting `timed_phase_transition` in milliseconds
 pub const WAITING_TIME: u64 = 120_000; // 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages
@@ -39,92 +42,271 @@ pub mod encryption {
     pub use ed25519_dalek::{PublicKey, SecretKey};
 }
 
+/// A standalone object that can take start and/or take part in a BLS-DKG Session with qp2p as it's transport layer.
 pub struct Member {
-    inner: Arc<Mutex<Inner>>,
+    qp2p: QuicP2p,
+    end_point: Endpoint,
+    _id: u64,
+    group: HashMap<NodeID, SocketAddr>,
+    connections: HashMap<NodeID, Arc<Mutex<Connection>>>,
+    key_gen: Option<KeyGen<KeyInfo>>,
+    our_keys: KeyInfo,
+    non_responsive: bool,
+    listener_pool: Option<Arc<Vec<JoinHandle<()>>>>,
 }
 
 impl Member {
-    /// Setup a Member to start DKG
+    /// Set up a Member object and initialize a qp2p `Endpoint` for listening to incoming connections.
+    ///
+    /// # Example
+    ///
+    /// Create a new Member
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use qp2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// let _member = Member::new(config, &mut rng).unwrap();
+    /// # Ok(()) } ); }
+    /// ```
     pub fn new<R: RngCore>(config: Config, rng: &mut R) -> Result<Self, Error> {
         let node = KeyInfo::new();
 
-        let (node_tx, node_rx) = unbounded::<Event>();
-        let (client_tx, _client_rx) = unbounded();
+        let qp2p = QuicP2p::with_config(Some(config), VecDeque::new(), false)
+            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
-        let quic_p2p = QuicP2p::with_config(
-            quic_p2p::EventSenders { node_tx, client_tx },
-            Some(config),
-            VecDeque::new(),
-            false,
-        )
-        .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+        let end_point = qp2p
+            .new_endpoint()
+            .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
 
-        let inner = Inner {
-            quic_p2p,
-            id: rng.gen(),
+        Ok(Self {
+            qp2p,
+            end_point,
+            _id: rng.gen(),
             group: Default::default(),
+            connections: Default::default(),
             key_gen: None,
             our_keys: node,
             non_responsive: false,
-        };
-        let arc_inner = Arc::new(Mutex::new(inner));
-
-        let _ = setup_quic_p2p_event_loop(&arc_inner, node_rx);
-
-        Ok(Self { inner: arc_inner })
+            listener_pool: None,
+        })
     }
 
     /// Connects to every member in the given group
-    pub fn connect_to_group(&mut self, group: HashMap<NodeID, SocketAddr>) {
-        let mut inner_locked = self.inner.lock().unwrap();
-
+    ///
+    /// # Example
+    ///
+    /// Create two new Members and connect them with each other
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use qp2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member2 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// member2.connect_to_group(map).await?;
+    /// # Ok(()) } ); }
+    /// ```
+    pub async fn connect_to_group(
+        &mut self,
+        group: HashMap<NodeID, SocketAddr>,
+    ) -> Result<(), Error> {
         // Required to for testing network churns
         #[cfg(test)]
-        inner_locked.disconnect_from_all();
+        self.disconnect_from_all().await;
 
-        inner_locked.group = group;
-        inner_locked.connect_to_all();
+        self.group = group;
+        let mut handles = vec![];
+        let mut receivers = vec![];
+        for (id, socket_addr) in self.group.iter() {
+            let (end_point, connection) = self
+                .qp2p
+                .connect_to(socket_addr)
+                .await
+                .map_err(|e| Error::QuicP2P(e.to_string()))?;
+            let _ = self
+                .connections
+                .insert(id.clone(), Arc::new(Mutex::new(connection)));
+
+            let incoming = end_point
+                .listen()
+                .map_err(|e| Error::QuicP2P(format!("{:#?}", e)))?;
+            let (tx, rx) = channel();
+            let handle = accept_loop(incoming, tx);
+            handles.push(handle);
+            receivers.push(rx);
+        }
+        self.listener_pool = Some(Arc::new(handles));
+        // self.receiver_pool = Some(receivers);
+
+        let _ = self.start_listening(receivers);
+
+        Ok(())
     }
 
     /// Initialize DKG with the connected nodes and returns back the proposal
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group
+    /// ```
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use qp2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    ///
+    /// // Set the threshold for the DKG session
+    /// let _initial_proposal = member3.init_dkg(2);
+    /// # Ok(()) } ); }
+    /// ```
     pub fn init_dkg(&mut self, threshold: usize) -> Result<Message<NodeID>, Error> {
-        let mut inner_locked = self.inner.lock().unwrap();
-
         // Extract public_keys of the nodes from the given group for DKG
-        let pub_keys = inner_locked
-            .group
-            .keys()
-            .fold(BTreeSet::new(), |mut set, key| {
-                let _ = set.insert(key.clone());
-                set
-            });
+        let pub_keys = self.group.keys().fold(BTreeSet::new(), |mut set, key| {
+            let _ = set.insert(key.clone());
+            set
+        });
 
         // Initialize DKG
-        let (key_gen, broadcast_msg) =
-            KeyGen::initialize(&inner_locked.our_keys, threshold, pub_keys)?;
+        let (key_gen, broadcast_msg) = KeyGen::initialize(&self.our_keys, threshold, pub_keys)?;
 
-        inner_locked.key_gen = Some(key_gen);
+        self.key_gen = Some(key_gen);
         Ok(broadcast_msg)
     }
 
-    /// Broadcast given message to all the connected peers
-    pub fn broadcast(&mut self, msg: Message<NodeID>) -> Result<(), Error> {
-        self.inner.lock().unwrap().broadcast(msg)
+    async fn start_listening(&mut self, receivers: Vec<Receiver<Bytes>>) {
+        loop {
+            for recv in &receivers {
+                while let Ok(msg) = recv.recv() {
+                    // Safe to unwrap
+                    self.handle_incoming(msg).await.unwrap();
+                }
+            }
+        }
     }
 
-    /// Begins timed phase transition
+    /// Broadcast given message to all the connected peers
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group
+    /// ```no_run
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use qp2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    /// let initial_proposal = member3.init_dkg(2)?;
+    ///
+    /// member3.broadcast(initial_proposal).await?;
+    /// # Ok(()) } ); }
+    /// ```
+    pub async fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
+        let mut tasks = Vec::default();
+        for conn in self.connections.values() {
+            let serialized_msg =
+                serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
+            let bytes = Bytes::from(serialized_msg);
+            let msg = bytes.clone();
+            let conn = Arc::clone(conn);
+            let task_handle = tokio::spawn(async move { conn.lock().await.send_only(msg).await });
+            tasks.push(task_handle);
+        }
+        let _result = futures::future::join_all(tasks).await;
+        Ok(())
+    }
+
+    /// Begins timed phase transition. If we don't get quorum number of responses for a message
+    /// after a certain period of time, we must force the Member to move on to the next phase in
+    /// the session.
     pub fn start_timed_phase_transition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
-        self.inner.lock().unwrap().start_timed_phase_trasition()
+        let (tx, rx) = channel();
+        let _ = thread::spawn(move || {
+            #[cfg(not(test))]
+            let ticker = after(Duration::from_millis(WAITING_TIME)); // 2 minutes
+
+            // We don't have to wait in tests as we wait for completion of message exchanges beforehand
+            #[cfg(test)]
+            let ticker = after(Duration::from_millis(1_000)); // 1 second
+            {
+                ticker.recv().unwrap();
+                tx.send(()).unwrap()
+            }
+        });
+        rx.recv().unwrap();
+        let mut rng = thread_rng();
+        match self.key_gen {
+            Some(ref mut key_gen) => key_gen.timed_phase_transition(&mut rng),
+            None => Err(Error::QuicP2P("Keygen instance not found".to_string())),
+        }
     }
 
     /// Fetches our NodeID
     pub fn id(&self) -> NodeID {
-        self.inner.clone().lock().unwrap().our_keys.node_id()
+        self.our_keys.node_id()
     }
 
     /// Check if our node is ready to generate Keys safely
     pub fn is_ready(&self) -> Result<bool, Error> {
-        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
+        if let Some(ref key_gen) = self.key_gen {
             Ok(key_gen.is_finalized())
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
@@ -132,13 +314,15 @@ impl Member {
     }
 
     /// Terminate the QUIC connections gracefully.
-    pub fn close(&mut self) {
-        self.inner.lock().unwrap().close()
+    pub async fn close(&mut self) {
+        for (_, conn) in self.connections.iter_mut() {
+            conn.lock().await.close()
+        }
     }
 
     /// Generate keys from the key_gen
     pub fn generate_keys(&self) -> Result<(BTreeSet<NodeID>, Outcome), Error> {
-        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
+        if let Some(ref key_gen) = self.key_gen {
             match key_gen.generate_keys() {
                 Some(oc) => Ok(oc),
                 None => Err(Error::QuicP2P("DKG DID NOT FINISH".to_string())),
@@ -148,13 +332,83 @@ impl Member {
         }
     }
 
-    /// Returns the Phase the Node is at.
+    /// Returns the Phase the Node is currently at.
     pub fn phase(&self) -> Result<Phase, Error> {
-        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
+        if let Some(ref key_gen) = self.key_gen {
             Ok(key_gen.phase())
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
+    }
+
+    /// Dispatches the incoming DKG message to the Key_Gen instance
+    ///
+    /// # Example
+    ///
+    /// Create three new Members and connect them with each other and make the 3rd Member start
+    /// a DKG session among the group and handle the incoming messages
+    /// ```no_run
+    /// # extern crate tokio; use bls_dkg::key_gen::Error;
+    /// use rand::thread_rng;
+    /// use qp2p::Config;
+    /// use bls_dkg::Member;
+    /// use std::{collections::HashMap, net::{IpAddr, Ipv4Addr}};
+    /// # #[tokio::main] async fn main() { use std::thread::sleep;
+    /// use tokio::time::Duration;
+    /// let _: Result<(), Error> = futures::executor::block_on( async {
+    /// let mut rng = thread_rng();
+    /// let mut config = Config::default();
+    ///
+    /// // To start a Member on localhost
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    /// config.port = Some(0);
+    ///
+    /// // Create multiple Members
+    /// let member1 = Member::new(config.clone(), &mut rng)?;
+    /// let member2 = Member::new(config.clone(), &mut rng)?;
+    /// let mut member3 = Member::new(config, &mut rng)?;
+    ///
+    /// let mut map = HashMap::new();
+    /// let _ = map.insert(member1.id(), member1.our_socket_addr());
+    /// let _ = map.insert(member2.id(), member2.our_socket_addr());
+    /// member3.connect_to_group(map).await?;
+    /// let initial_proposal = member3.init_dkg(2)?;
+    ///
+    /// // This would technically create an avalanche of messages to complete the DKG session
+    /// member3.broadcast(initial_proposal).await?;
+    /// sleep(Duration::from_secs(5)); // Wait for the session to finish
+    ///
+    /// assert!(member3.is_ready());
+    /// # Ok(()) } ); }
+    /// ```
+    pub async fn handle_incoming(&mut self, incoming: Bytes) -> Result<(), Error> {
+        match deserialize(&incoming) {
+            Ok(msg) => {
+                let mut rng = thread_rng();
+                if let Some(ref mut key_gen) = self.key_gen {
+                    match key_gen.handle_message(&mut rng, msg) {
+                        Ok(list) => {
+                            if !self.non_responsive {
+                                for message in list {
+                                    // Broadcast the reply messages right away
+                                    self.broadcast(message).await?;
+                                }
+                            }
+                        }
+                        Err(e) => trace!("Error: {:#?}", e),
+                    }
+                } else {
+                    trace!("Error: No Keygen instance initiated")
+                }
+            }
+            Err(e) => trace!("Error: {:#?}", e),
+        }
+        Ok(())
+    }
+
+    /// Fetches our quic connection's socket address
+    pub fn our_socket_addr(&self) -> SocketAddr {
+        self.end_point.local_address()
     }
 }
 
@@ -162,42 +416,34 @@ impl Member {
 impl Member {
     /// Check if our node has received all contributions
     pub fn all_contribution_received(&self) -> Result<bool, Error> {
-        if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
+        if let Some(ref key_gen) = self.key_gen {
             Ok(key_gen.all_contribution_received())
         } else {
             Err(Error::QuicP2P("NO DKG INSTANCE FOUND".to_string()))
         }
     }
 
-    /// Fetches our quic connection's socket address
-    pub fn our_socket_addr(&mut self) -> Result<SocketAddr, Error> {
-        self.inner
-            .lock()
-            .unwrap()
-            .quic_p2p
-            .our_connection_info()
-            .map_err(|e| Error::QuicP2P(e.to_string()))
-    }
-
     /// Set the given node as non_responsive
     pub fn set_as_non_responsive(&mut self) {
-        self.inner.lock().unwrap().non_responsive = true
+        self.non_responsive = true
     }
 
     /// Check if the node is non_responsive
     pub fn is_non_responsive(&self) -> bool {
-        self.inner.lock().unwrap().non_responsive
+        self.non_responsive
     }
 
     /// Disconnect from all the nodes
-    pub fn disconnect_from_all(&mut self) {
-        self.inner.lock().unwrap().disconnect_from_all()
+    pub async fn disconnect_from_all(&mut self) {
+        for conn in self.connections.values() {
+            conn.lock().await.close()
+        }
     }
 }
 
 impl Ord for Member {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.inner.lock().unwrap().cmp(&other.inner.lock().unwrap())
+        self.our_keys.node_id().cmp(&other.our_keys.public_id)
     }
 }
 
@@ -205,19 +451,19 @@ impl Eq for Member {}
 
 impl PartialEq for Member {
     fn eq(&self, other: &Self) -> bool {
-        self.inner.lock().unwrap().eq(&other.inner.lock().unwrap())
+        self.our_keys.node_id().eq(&other.our_keys.node_id())
     }
 }
 
 impl PartialOrd for Member {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.inner
-            .lock()
-            .unwrap()
-            .partial_cmp(&other.inner.lock().unwrap())
+        self.our_keys
+            .node_id()
+            .partial_cmp(&other.our_keys.node_id())
     }
 }
 
+/// The Public ID of a Member participating in a DKG session.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub struct NodeID {
     name: String, // TODO: To be replaced by XorName?
@@ -290,203 +536,25 @@ impl Default for KeyInfo {
     }
 }
 
-struct Inner {
-    quic_p2p: QuicP2p,
-    id: u64,
-    group: HashMap<NodeID, SocketAddr>,
-    key_gen: Option<KeyGen<KeyInfo>>,
-    our_keys: KeyInfo,
-    non_responsive: bool,
-}
-
-impl PartialEq for Inner {
-    fn eq(&self, other: &Self) -> bool {
-        self.our_keys.public_id().eq(other.our_keys.public_id())
-    }
-}
-
-impl Ord for Inner {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.our_keys.node_id().cmp(&other.our_keys.public_id)
-    }
-}
-
-impl PartialOrd for Inner {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.our_keys
-            .public_id()
-            .partial_cmp(other.our_keys.public_id())
-    }
-}
-
-impl Eq for Inner {}
-
-impl Drop for Inner {
-    fn drop(&mut self) {
-        self.terminate();
-        thread::sleep(Duration::from_millis(50));
-    }
-}
-
-impl Inner {
-    // Connects to every Node in the group
-    pub fn connect_to_all(&mut self) {
-        for (_id, socket_addr) in self.group.iter() {
-            self.quic_p2p.connect_to(*socket_addr)
-        }
-    }
-
-    #[cfg(test)]
-    // Disconnects from every Node in the group
-    pub fn disconnect_from_all(&mut self) {
-        for (_id, socket_addr) in self.group.iter() {
-            self.quic_p2p.disconnect_from(*socket_addr)
-        }
-    }
-
-    // Updates the connected list if successfully connected at the transport layer
-    pub fn handle_connected_to(&mut self, peer: Peer) {
-        trace!("Connected to Peer: {:?}", peer);
-    }
-
-    // Dispatches the incoming DKG message to the Key_Gen instance
-    fn handle_incoming(&mut self, msg: Bytes, _peer: Peer) {
-        match deserialize(&msg) {
-            Ok(msg) => {
-                let mut rng = thread_rng();
-                if let Some(ref mut key_gen) = self.key_gen {
-                    match key_gen.handle_message(&mut rng, msg) {
-                        Ok(list) => {
-                            if !self.non_responsive {
-                                for message in list {
-                                    // Broadcast the reply messages right away
-                                    let _ = self.broadcast(message);
-                                }
-                            }
-                        }
-                        Err(e) => trace!("Error: {:#?}", e),
-                    }
-                } else {
-                    trace!("Error: No Keygen instance initiated")
-                }
-            }
-            Err(e) => trace!("Error: {:#?}", e),
-        }
-    }
-
-    fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
-        let serialized_msg =
-            serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
-        let msg = Bytes::from(serialized_msg);
-        for (_, socket_addr) in self.group.iter() {
-            let token = rand::thread_rng().gen();
-            self.quic_p2p
-                .send(Peer::Node(*socket_addr), msg.clone(), token)
-        }
-        Ok(())
-    }
-
-    // Timed Phase transition needs to be called if we do not finalize automatically
-    fn start_timed_phase_trasition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
-        let (tx, rx) = channel();
-        let _ = thread::spawn(move || {
-            #[cfg(not(test))]
-            let ticker = after(Duration::from_millis(WAITING_TIME)); // 2 minutes
-
-            // We don't have to wait in tests as we wait for completion of message exchanges beforehand
-            #[cfg(test)]
-            let ticker = after(Duration::from_millis(1_000)); // 1 second
-            {
-                ticker.recv().unwrap();
-                tx.send(()).unwrap()
-            }
-        });
-        rx.recv().unwrap();
-        let mut rng = thread_rng();
-        match self.key_gen {
-            Some(ref mut key_gen) => key_gen.timed_phase_transition(&mut rng),
-            None => Err(Error::QuicP2P("Keygen instance not found".to_string())),
-        }
-    }
-
-    fn terminate(&mut self) {
-        for (_nodeid, socket_addr) in self.group.iter() {
-            self.quic_p2p.disconnect_from(*socket_addr);
-        }
-    }
-
-    /// Terminate the QUIC connections gracefully.
-    pub fn close(&mut self) {
-        trace!("{}: Terminating connection", self.id);
-        self.terminate()
-    }
-
-    fn handle_quic_p2p_event(&mut self, event: Event) {
-        use Event::*;
-        match event {
-            BootstrapFailure => {
-                panic!("Unexpected event: Bootstrap Failure!");
-            }
-            BootstrappedTo { .. } => {
-                panic!("Unexpected event: BootstrappedTo!");
-            }
-            ConnectedTo { peer } => self.handle_connected_to(peer),
-            SentUserMessage { peer, msg, token } => {
-                self.handle_sent_user_message(peer.peer_addr(), msg, token)
-            }
-            UnsentUserMessage { peer, msg, token } => {
-                self.handle_unsent_user_message(peer.peer_addr(), &msg, token)
-            }
-            NewMessage { peer, msg } => self.handle_incoming(msg, peer),
-            Finish => {
-                info!("Received unexpected event: {}", event);
-            }
-            ConnectionFailure { peer, err } => self.handle_connection_failure(peer, err),
-        }
-    }
-
-    fn handle_sent_user_message(&mut self, _peer_addr: SocketAddr, _msg: Bytes, _token: Token) {
-        trace!("{}: Sent user message", self.id);
-    }
-
-    fn handle_unsent_user_message(&mut self, _peer_addr: SocketAddr, _msg: &Bytes, _token: Token) {
-        trace!("{}: User message not sent", self.id);
-        // TODO: unimplemented
-    }
-
-    fn handle_connection_failure(&mut self, peer: Peer, err: QuicP2pError) {
-        if let QuicP2pError::ConnectionCancelled = err {
-            trace!(
-                "{}: Recvd connection failure for {}, {}",
-                self.id,
-                peer,
-                err
-            );
-        }
-    }
-}
-
-fn setup_quic_p2p_event_loop(
-    inner: &Arc<Mutex<Inner>>,
-    event_rx: Receiver<Event>,
-) -> JoinHandle<()> {
-    let inner_weak = Arc::downgrade(inner);
-
-    thread::spawn(move || {
-        while let Ok(event) = event_rx.recv() {
-            match event {
-                Event::Finish => break, // Graceful shutdown
-                event => {
-                    if let Some(inner) = inner_weak.upgrade() {
-                        let mut inner = inner.lock().unwrap();
-                        inner.handle_quic_p2p_event(event);
-                    } else {
-                        // Event loop got dropped
-                        trace!("Gracefully terminating quic-p2p event loop");
-                        break;
-                    }
-                }
-            }
+fn accept_loop(mut incoming: IncomingConnections, tx: Sender<Bytes>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(msg) = incoming.next().await {
+            let _handle = tokio::spawn(connection_loop(msg, tx.clone()));
         }
     })
+}
+
+async fn connection_loop(mut stream: IncomingMessages, tx: Sender<Bytes>) {
+    while let Some(message) = &stream.next().await {
+        println!("RECEIVED SOME MESSAGE!");
+        match message {
+            qp2p::Message::UniStream { .. } => {
+                panic!("ERROR: Got Unistream!");
+            }
+            qp2p::Message::BiStream { bytes, .. } => {
+                println!("GOT MESSAGE: {:?}", bytes);
+                let _ = tx.send(bytes.clone());
+            }
+        }
+    }
 }
