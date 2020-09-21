@@ -1,22 +1,20 @@
 [package]
-authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 description = "Implementation of a DKG"
 edition = "2018"
-exclude = [""]
+exclude = [ "" ]
 homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 name = "bls_dkg"
 readme = "README.md"
 repository = "https://github.com/maidsafe/bls_dkg"
-version = "0.1.0"
+version = "0.1.1"
 
 [dependencies]
 aes = "~0.3.2"
 bincode = "1.2.1"
 block-modes = "~0.3.3"
-bytes = { version = "~0.5.4", features = ["serde"] }
 crossbeam-channel = "~0.4.2"
-ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.3", features = ["serde"] }
 err-derive = "~0.2.4"
 itertools = "~0.9.0"
 log = "~0.4.8"
@@ -25,4 +23,16 @@ rand_core = "~0.5.1"
 serde = "1.0.106"
 serde_derive = "1.0.106"
 threshold_crypto = "~0.4.0"
-quic-p2p = { version = "~0.7.0", features = ["upnp"] }
+
+  [dependencies.bytes]
+  version = "~0.5.4"
+  features = [ "serde" ]
+
+  [dependencies.ed25519_dalek]
+  package = "tmp-ed25519"
+  version = "1.0.0-pre.3"
+  features = [ "serde" ]
+
+  [dependencies.quic-p2p]
+  version = "~0.7.0"
+  features = [ "upnp" ]
