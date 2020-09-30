@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Outcome","DKG result"]]});

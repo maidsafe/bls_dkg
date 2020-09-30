@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["WAITING_TIME","Time to wait before starting `timed_phase_transition` in milliseconds"]],"mod":[["encryption","Encryption and decryption"],["signing","Signing and verification."]],"struct":[["KeyInfo",""],["Member",""],["NodeID",""]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["SIG_SIZE","The size of a signature's representation in bytes."]],"struct":[["PublicKey","A public key."],["SecretKey","A secret key; wraps a single prime field element. The field element is heap allocated to avoid any stack copying that result when passing `SecretKey`s between stack frames."],["Signature","A signature."]]});

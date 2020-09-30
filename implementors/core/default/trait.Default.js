@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["bls_dkg"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"bls_dkg/member/struct.KeyInfo.html\" title=\"struct bls_dkg::member::KeyInfo\">KeyInfo</a>","synthetic":false,"types":["bls_dkg::member::KeyInfo"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

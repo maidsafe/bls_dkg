@@ -1,0 +1,1 @@
+initSidebarItems({"trait":[["PublicId","The public identity of a node.  It provides functionality to allow it to be used as an asymmetric signing public key."],["SecretId","The secret identity of a node.  It provides functionality to allow it to be used as an asymmetric signing secret key and to also yield the associated public identity."]]});
