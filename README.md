@@ -7,9 +7,12 @@ The notion is that all participants (p) agree on `m` (members) of `n` (total num
 
 This algorithm is synchronous and will require participants are disqualified for sending bad data **or** being non responsive. The latter is arbitrarily set in this crate, but it can be set by users of the crate.
 
+| [Documentation](https://maidsafe.github.io/bls_dkg/) | [MaidSafe website](https://maidsafe.net) | [Safe Dev Forum](https://forum.safedev.org) | [Safe Network Forum](https://safenetforum.org) |
+|:----------------------------------------:|:----------------------------------------:|:-------------------------------------------:|:----------------------------------------------:|
+
 ## License
 
-This SAFE Network library is dual-licensed under the Modified BSD ([LICENSE-BSD](LICENSE-BSD) https://opensource.org/licenses/BSD-3-Clause) or the MIT license ([LICENSE-MIT](LICENSE-MIT) http://opensource.org/licenses/MIT) at your option.
+This Safe Network library is dual-licensed under the Modified BSD ([LICENSE-BSD](LICENSE-BSD) https://opensource.org/licenses/BSD-3-Clause) or the MIT license ([LICENSE-MIT](LICENSE-MIT) http://opensource.org/licenses/MIT) at your option.
 
 ## Contributing
 
