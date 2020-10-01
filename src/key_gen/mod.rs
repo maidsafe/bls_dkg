@@ -1005,31 +1005,31 @@ impl Debug for KeyGen {
 }
 
 #[cfg(test)]
-impl<S: SecretId> KeyGen<S> {
+impl KeyGen {
     /// Returns the list of the final participants.
-    pub fn pub_keys(&self) -> &BTreeSet<S::PublicId> {
+    pub fn names(&self) -> &BTreeSet<XorName> {
         &self.names
     }
 
     /// Initialize an instance with some pre-defined value, only for testing usage.
     pub fn initialize_for_test(
-        our_id: S::PublicId,
+        our_id: XorName,
         our_index: u64,
-        pub_keys: BTreeSet<S::PublicId>,
+        names: BTreeSet<XorName>,
         threshold: usize,
         phase: Phase,
-    ) -> KeyGen<S> {
-        assert!(pub_keys.len() >= threshold);
-        KeyGen::<S> {
+    ) -> KeyGen {
+        assert!(names.len() >= threshold);
+        KeyGen {
             our_id,
             our_index,
-            pub_keys: pub_keys.clone(),
-            encryptor: Encryptor::new(&pub_keys),
+            names: names.clone(),
+            encryptor: Encryptor::new(&names),
             parts: BTreeMap::new(),
             threshold,
             phase,
             initalization_accumulator: InitializationAccumulator::new(),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),
+            complaints_accumulator: ComplaintsAccumulator::new(names, threshold),
             pending_complain_messages: Vec::new(),
             pending_messages: Vec::new(),
         }

@@ -9,4 +9,4 @@
 
 mod peer;
 
-pub use self::peer::{create_ids, PeerId, NAMES};
+pub use self::peer::{create_ids, PeerId};

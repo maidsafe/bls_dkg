@@ -7,12 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::dev_utils::{create_ids, PeerId, NAMES};
+use crate::dev_utils::{create_ids, PeerId};
 use crate::key_gen::{message::Message, Error, KeyGen};
 use bincode::serialize;
 use itertools::Itertools;
 use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
+use xor_name::XorName;
 
 // Alter the configure of the number of nodes and the threshold.
 const NODENUM: usize = 7;
@@ -21,7 +22,7 @@ const THRESHOLD: usize = 5;
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
     non_responsives: BTreeSet<u64>,
-) -> (Vec<PeerId>, Vec<KeyGen<PeerId>>) {
+) -> (Vec<PeerId>, Vec<KeyGen>) {
     // Generate individual ids.
     let peer_ids: Vec<PeerId> = create_ids(NODENUM);
 
@@ -36,20 +37,19 @@ fn create_generators<R: RngCore>(
     non_responsives: BTreeSet<u64>,
     peer_ids: &[PeerId],
     threshold: usize,
-) -> Vec<KeyGen<PeerId>> {
+) -> Vec<KeyGen> {
     // Generate individual key pairs.
-    let pub_keys: BTreeSet<PeerId> = peer_ids.iter().cloned().collect();
+    let names: BTreeSet<XorName> = peer_ids.iter().map(|peer_id| peer_id.name()).collect();
 
     // Create the `KeyGen` instances
     let mut generators = Vec::new();
     let mut proposals = Vec::new();
     peer_ids.iter().for_each(|peer_id| {
         let key_gen = {
-            let (key_gen, proposal) =
-                KeyGen::<PeerId>::initialize(&peer_id.sec_key(), threshold, pub_keys.clone())
-                    .unwrap_or_else(|err| {
-                        panic!("Failed to initialize KeyGen of {:?} {:?}", &peer_id, err)
-                    });
+            let (key_gen, proposal) = KeyGen::initialize(peer_id.name(), threshold, names.clone())
+                .unwrap_or_else(|err| {
+                    panic!("Failed to initialize KeyGen of {:?} {:?}", &peer_id, err)
+                });
             proposals.push(proposal);
             key_gen
         };
@@ -64,8 +64,8 @@ fn create_generators<R: RngCore>(
 
 fn messaging<R: RngCore>(
     mut rng: &mut R,
-    generators: &mut Vec<KeyGen<PeerId>>,
-    proposals: &mut Vec<Message<PeerId>>,
+    generators: &mut Vec<KeyGen>,
+    proposals: &mut Vec<Message>,
     non_responsives: BTreeSet<u64>,
 ) {
     // Keep broadcasting the proposals among the generators till no more.
@@ -138,7 +138,7 @@ fn having_max_unresponsive_nodes_still_work() {
             if !non_responsives.contains(&(index as u64)) {
                 assert!(key_gen.generate_keys().is_some());
                 non_responsives.iter().for_each(|idx| {
-                    assert!(!key_gen.pub_keys().contains(&peer_ids[*idx as usize]))
+                    assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
                 });
             } else {
                 assert!(key_gen.generate_keys().is_none());
@@ -339,7 +339,7 @@ fn network_churning() {
 
     while naming_index < 15 {
         if peer_ids.len() < NODENUM || rng.gen() {
-            peer_ids.push(PeerId::new(NAMES[naming_index]));
+            peer_ids.push(PeerId::new());
             naming_index += 1;
         } else {
             let _ = peer_ids.remove(rng.gen_range(0, peer_ids.len()));
