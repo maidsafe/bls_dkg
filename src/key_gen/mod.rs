@@ -1006,7 +1006,7 @@ impl Debug for KeyGen {
 
 #[cfg(test)]
 impl KeyGen {
-    /// Returns the list of the final participants.
+    /// Returns the name list of the final participants.
     pub fn names(&self) -> &BTreeSet<XorName> {
         &self.names
     }
