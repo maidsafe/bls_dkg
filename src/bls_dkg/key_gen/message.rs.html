@@ -80,20 +80,20 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">encryptor</span>::{<span class="ident">Iv</span>, <span class="ident">Key</span>};
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Acknowledgment</span>, <span class="ident">Part</span>};
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">id</span>::<span class="ident">PublicId</span>;
 <span class="kw">use</span> <span class="ident">serde_derive</span>::{<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">collections</span>::{<span class="ident">BTreeMap</span>, <span class="ident">BTreeSet</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>;
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// Messages used for running BLS DKG.</span>
 <span class="attribute">#[<span class="ident">serde</span>(<span class="ident">bound</span> <span class="op">=</span> <span class="string">&quot;&quot;</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">PublicId</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Message</span> {
     <span class="ident">Initialization</span> {
         <span class="ident">key_gen_id</span>: <span class="ident">u64</span>,
         <span class="ident">m</span>: <span class="ident">usize</span>,
         <span class="ident">n</span>: <span class="ident">usize</span>,
-        <span class="ident">member_list</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">P</span><span class="op">&gt;</span>,
+        <span class="ident">member_list</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     },
     <span class="ident">Proposal</span> {
         <span class="ident">key_gen_id</span>: <span class="ident">u64</span>,
@@ -106,7 +106,7 @@
     },
     <span class="ident">Justification</span> {
         <span class="ident">key_gen_id</span>: <span class="ident">u64</span>,
-        <span class="ident">keys_map</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">P</span>, (<span class="ident">Key</span>, <span class="ident">Iv</span>)<span class="op">&gt;</span>,
+        <span class="ident">keys_map</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, (<span class="ident">Key</span>, <span class="ident">Iv</span>)<span class="op">&gt;</span>,
     },
     <span class="ident">Acknowledgment</span> {
         <span class="ident">key_gen_id</span>: <span class="ident">u64</span>,
@@ -114,7 +114,7 @@
     },
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">PublicId</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">P</span><span class="op">&gt;</span> {
+<span class="kw">impl</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Message</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="self">self</span> {
             <span class="ident">Message</span>::<span class="ident">Initialization</span> {

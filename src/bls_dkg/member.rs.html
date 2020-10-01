@@ -483,13 +483,6 @@
 <span id="483">483</span>
 <span id="484">484</span>
 <span id="485">485</span>
-<span id="486">486</span>
-<span id="487">487</span>
-<span id="488">488</span>
-<span id="489">489</span>
-<span id="490">490</span>
-<span id="491">491</span>
-<span id="492">492</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -499,7 +492,6 @@
 <span class="comment">// KIND, either express or implied. Please review the Licences for the specific language governing</span>
 <span class="comment">// permissions and limitations relating to use of the SAFE Network Software.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">id</span>::{<span class="ident">PublicId</span> <span class="kw">as</span> <span class="ident">TraitPublicId</span>, <span class="ident">SecretId</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">key_gen</span>::<span class="ident">message</span>::<span class="ident">Message</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">key_gen</span>::<span class="ident">outcome</span>::<span class="ident">Outcome</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">key_gen</span>::{<span class="ident">Error</span>, <span class="ident">KeyGen</span>, <span class="ident">Phase</span>};
@@ -518,6 +510,7 @@
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">thread</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">thread</span>::<span class="ident">JoinHandle</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">time</span>::<span class="ident">Duration</span>;
+<span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// Time to wait before starting `timed_phase_transition` in milliseconds</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">WAITING_TIME</span>: <span class="ident">u64</span> <span class="op">=</span> <span class="number">120_000</span>; <span class="comment">// 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages</span>
@@ -580,33 +573,36 @@
     }
 
     <span class="doccomment">/// Initialize DKG with the connected nodes and returns back the proposal</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init_dkg</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init_dkg</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Message</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner_locked</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>();
 
-        <span class="comment">// Extract public_keys of the nodes from the given group for DKG</span>
-        <span class="kw">let</span> <span class="ident">pub_keys</span> <span class="op">=</span> <span class="ident">inner_locked</span>
+        <span class="comment">// Extract names of the nodes from the given group for DKG</span>
+        <span class="kw">let</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">inner_locked</span>
             .<span class="ident">group</span>
             .<span class="ident">keys</span>()
             .<span class="ident">fold</span>(<span class="ident">BTreeSet</span>::<span class="ident">new</span>(), <span class="op">|</span><span class="kw-2">mut</span> <span class="ident">set</span>, <span class="ident">key</span><span class="op">|</span> {
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">set</span>.<span class="ident">insert</span>(<span class="ident">key</span>.<span class="ident">clone</span>());
                 <span class="ident">set</span>
-            });
+            })
+            .<span class="ident">iter</span>()
+            .<span class="ident">map</span>(<span class="op">|</span><span class="ident">node_id</span><span class="op">|</span> <span class="ident">node_id</span>.<span class="ident">name</span>())
+            .<span class="ident">collect</span>();
 
         <span class="comment">// Initialize DKG</span>
         <span class="kw">let</span> (<span class="ident">key_gen</span>, <span class="ident">broadcast_msg</span>) <span class="op">=</span>
-            <span class="ident">KeyGen</span>::<span class="ident">initialize</span>(<span class="kw-2">&amp;</span><span class="ident">inner_locked</span>.<span class="ident">our_keys</span>, <span class="ident">threshold</span>, <span class="ident">pub_keys</span>)<span class="question-mark">?</span>;
+            <span class="ident">KeyGen</span>::<span class="ident">initialize</span>(<span class="ident">inner_locked</span>.<span class="ident">our_keys</span>.<span class="ident">name</span>(), <span class="ident">threshold</span>, <span class="ident">names</span>)<span class="question-mark">?</span>;
 
         <span class="ident">inner_locked</span>.<span class="ident">key_gen</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">key_gen</span>);
         <span class="prelude-val">Ok</span>(<span class="ident">broadcast_msg</span>)
     }
 
     <span class="doccomment">/// Broadcast given message to all the connected peers</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">broadcast</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">broadcast</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">msg</span>: <span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">broadcast</span>(<span class="ident">msg</span>)
     }
 
     <span class="doccomment">/// Begins timed phase transition</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start_timed_phase_transition</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start_timed_phase_transition</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">start_timed_phase_trasition</span>()
     }
 
@@ -630,7 +626,7 @@
     }
 
     <span class="doccomment">/// Generate keys from the key_gen</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">generate_keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span>, <span class="ident">Outcome</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">generate_keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">Outcome</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">ref</span> <span class="ident">key_gen</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">key_gen</span> {
             <span class="kw">match</span> <span class="ident">key_gen</span>.<span class="ident">generate_keys</span>() {
                 <span class="prelude-val">Some</span>(<span class="ident">oc</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">oc</span>),
@@ -713,9 +709,15 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>, <span class="ident">Clone</span>, <span class="ident">Hash</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">NodeID</span> {
-    <span class="ident">name</span>: <span class="ident">String</span>, <span class="comment">// TODO: To be replaced by XorName?</span>
+    <span class="ident">name</span>: <span class="ident">XorName</span>,
     <span class="ident">signing_key</span>: <span class="ident">signing</span>::<span class="ident">PublicKey</span>,
     <span class="ident">_encryption_key</span>: <span class="ident">encryption</span>::<span class="ident">PublicKey</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">NodeID</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
+        <span class="self">self</span>.<span class="ident">name</span>
+    }
 }
 
 <span class="kw">struct</span> <span class="ident">SecretKeys</span> {
@@ -742,10 +744,8 @@
             <span class="ident">_encryption_keys</span>: <span class="ident">encryption_secret_key</span>,
         };
 
-        <span class="kw">let</span> <span class="ident">random_numb</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="ident">thread_rng</span>().<span class="ident">gen</span>();
-
         <span class="kw">let</span> <span class="ident">public_id</span> <span class="op">=</span> <span class="ident">NodeID</span> {
-            <span class="ident">name</span>: <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;NODE ID: {:#?}&quot;</span>, <span class="ident">random_numb</span>),
+            <span class="ident">name</span>: <span class="ident">thread_rng</span>().<span class="ident">gen</span>(),
             <span class="ident">signing_key</span>: <span class="ident">signing_public_key</span>,
             <span class="ident">_encryption_key</span>: <span class="ident">encryption_public_key</span>,
         };
@@ -759,21 +759,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">node_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">NodeID</span> {
         <span class="self">self</span>.<span class="ident">public_id</span>.<span class="ident">clone</span>()
     }
-}
 
-<span class="kw">impl</span> <span class="ident">TraitPublicId</span> <span class="kw">for</span> <span class="ident">NodeID</span> {
-    <span class="kw">type</span> <span class="ident">Signature</span> <span class="op">=</span> <span class="ident">signing</span>::<span class="ident">Signature</span>;
-
-    <span class="kw">fn</span> <span class="ident">verify_signature</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signature</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>::<span class="ident">Signature</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">signing_key</span>.<span class="ident">verify</span>(<span class="ident">signature</span>, <span class="ident">data</span>)
-    }
-}
-
-<span class="kw">impl</span> <span class="ident">SecretId</span> <span class="kw">for</span> <span class="ident">KeyInfo</span> {
-    <span class="kw">type</span> <span class="ident">PublicId</span> <span class="op">=</span> <span class="ident">NodeID</span>;
-
-    <span class="kw">fn</span> <span class="ident">public_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span>::<span class="ident">PublicId</span> {
-        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">public_id</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
+        <span class="self">self</span>.<span class="ident">public_id</span>.<span class="ident">name</span>()
     }
 }
 
@@ -787,14 +775,14 @@
     <span class="ident">quic_p2p</span>: <span class="ident">QuicP2p</span>,
     <span class="ident">id</span>: <span class="ident">u64</span>,
     <span class="ident">group</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">NodeID</span>, <span class="ident">SocketAddr</span><span class="op">&gt;</span>,
-    <span class="ident">key_gen</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">KeyGen</span><span class="op">&lt;</span><span class="ident">KeyInfo</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">key_gen</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">KeyGen</span><span class="op">&gt;</span>,
     <span class="ident">our_keys</span>: <span class="ident">KeyInfo</span>,
     <span class="ident">non_responsive</span>: <span class="ident">bool</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">PartialEq</span> <span class="kw">for</span> <span class="ident">Inner</span> {
     <span class="kw">fn</span> <span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">other</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">our_keys</span>.<span class="ident">public_id</span>().<span class="ident">eq</span>(<span class="ident">other</span>.<span class="ident">our_keys</span>.<span class="ident">public_id</span>())
+        <span class="self">self</span>.<span class="ident">our_keys</span>.<span class="ident">name</span>().<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">our_keys</span>.<span class="ident">name</span>())
     }
 }
 
@@ -806,9 +794,7 @@
 
 <span class="kw">impl</span> <span class="ident">PartialOrd</span> <span class="kw">for</span> <span class="ident">Inner</span> {
     <span class="kw">fn</span> <span class="ident">partial_cmp</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">other</span>: <span class="kw-2">&amp;</span><span class="self">Self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Ordering</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">our_keys</span>
-            .<span class="ident">public_id</span>()
-            .<span class="ident">partial_cmp</span>(<span class="ident">other</span>.<span class="ident">our_keys</span>.<span class="ident">public_id</span>())
+        <span class="self">self</span>.<span class="ident">our_keys</span>.<span class="ident">name</span>().<span class="ident">partial_cmp</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">our_keys</span>.<span class="ident">name</span>())
     }
 }
 
@@ -867,7 +853,7 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">broadcast</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">broadcast</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">message</span>: <span class="ident">Message</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">serialized_msg</span> <span class="op">=</span>
             <span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">message</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">e</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">Serialization</span>(<span class="ident">e</span>.<span class="ident">to_string</span>()))<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Bytes</span>::<span class="ident">from</span>(<span class="ident">serialized_msg</span>);
@@ -880,7 +866,7 @@
     }
 
     <span class="comment">// Timed Phase transition needs to be called if we do not finalize automatically</span>
-    <span class="kw">fn</span> <span class="ident">start_timed_phase_trasition</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&lt;</span><span class="ident">NodeID</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">start_timed_phase_trasition</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">tx</span>, <span class="ident">rx</span>) <span class="op">=</span> <span class="ident">channel</span>();
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">thread</span>::<span class="ident">spawn</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">test</span>))]</span>
