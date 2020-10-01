@@ -18,7 +18,6 @@ extern crate serde_derive;
 #[macro_use]
 extern crate log;
 
-pub mod id;
 pub mod key_gen;
 pub mod member;
 mod tests;
