@@ -8,13 +8,13 @@
 // Software.
 
 use super::Error;
-use crate::id::PublicId;
 use aes::Aes128;
 use block_modes::block_padding::Pkcs7;
 use block_modes::{BlockMode, Cbc};
 use rand::Rng;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use xor_name::XorName;
 
 type Aes128Cbc = Cbc<Aes128, Pkcs7>;
 
@@ -43,24 +43,24 @@ fn encrypt(data: &[u8], key: &Key, iv: &Iv) -> Result<Vec<u8>, Error> {
 
 /// An instance holds the encryption keys during the DKG procedure, and provides the encryption
 /// facilities.
-pub struct Encryptor<P: PublicId> {
-    keys_map: BTreeMap<P, (Key, Iv)>,
+pub struct Encryptor {
+    keys_map: BTreeMap<XorName, (Key, Iv)>,
 }
 
-impl<P: PublicId> Encryptor<P> {
-    pub fn new(peers: &BTreeSet<P>) -> Self {
+impl Encryptor {
+    pub fn new(peers: &BTreeSet<XorName>) -> Self {
         let mut keys_map = BTreeMap::new();
         // let mut rng = rand::thread_rng();
         // let mut rng_adaptor = RngAdapter(&mut rng);
-        for pk in peers.iter() {
+        for name in peers.iter() {
             let key = Key(rand::thread_rng().gen());
             let iv = Iv(rand::thread_rng().gen());
-            let _ = keys_map.insert(pk.clone(), (key, iv));
+            let _ = keys_map.insert(*name, (key, iv));
         }
         Encryptor { keys_map }
     }
 
-    pub fn encrypt<M: AsRef<[u8]>>(&self, to: &P, msg: M) -> Result<Vec<u8>, Error> {
+    pub fn encrypt<M: AsRef<[u8]>>(&self, to: &XorName, msg: M) -> Result<Vec<u8>, Error> {
         if let Some((key, iv)) = self.keys_map.get(to) {
             encrypt(msg.as_ref(), key, iv)
         } else {
@@ -68,7 +68,7 @@ impl<P: PublicId> Encryptor<P> {
         }
     }
 
-    pub fn keys_map(&self) -> BTreeMap<P, (Key, Iv)> {
+    pub fn keys_map(&self) -> BTreeMap<XorName, (Key, Iv)> {
         self.keys_map.clone()
     }
 

@@ -9,20 +9,20 @@
 
 use super::encryptor::{Iv, Key};
 use super::{Acknowledgment, Part};
-use crate::id::PublicId;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use xor_name::XorName;
 
 /// Messages used for running BLS DKG.
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Message<P: PublicId> {
+pub enum Message {
     Initialization {
         key_gen_id: u64,
         m: usize,
         n: usize,
-        member_list: BTreeSet<P>,
+        member_list: BTreeSet<XorName>,
     },
     Proposal {
         key_gen_id: u64,
@@ -35,7 +35,7 @@ pub enum Message<P: PublicId> {
     },
     Justification {
         key_gen_id: u64,
-        keys_map: BTreeMap<P, (Key, Iv)>,
+        keys_map: BTreeMap<XorName, (Key, Iv)>,
     },
     Acknowledgment {
         key_gen_id: u64,
@@ -43,7 +43,7 @@ pub enum Message<P: PublicId> {
     },
 }
 
-impl<P: PublicId> fmt::Debug for Message<P> {
+impl fmt::Debug for Message {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match &*self {
             Message::Initialization {

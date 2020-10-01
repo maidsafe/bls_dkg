@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::id::{PublicId as TraitPublicId, SecretId};
 use crate::key_gen::message::Message;
 use crate::key_gen::outcome::Outcome;
 use crate::key_gen::{Error, KeyGen, Phase};
@@ -25,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use xor_name::XorName;
 
 /// Time to wait before starting `timed_phase_transition` in milliseconds
 pub const WAITING_TIME: u64 = 120_000; // 2 minutes - max time for a session with 7 Members to finish exchanging Contribution messages
@@ -87,33 +87,36 @@ impl Member {
     }
 
     /// Initialize DKG with the connected nodes and returns back the proposal
-    pub fn init_dkg(&mut self, threshold: usize) -> Result<Message<NodeID>, Error> {
+    pub fn init_dkg(&mut self, threshold: usize) -> Result<Message, Error> {
         let mut inner_locked = self.inner.lock().unwrap();
 
-        // Extract public_keys of the nodes from the given group for DKG
-        let pub_keys = inner_locked
+        // Extract names of the nodes from the given group for DKG
+        let names = inner_locked
             .group
             .keys()
             .fold(BTreeSet::new(), |mut set, key| {
                 let _ = set.insert(key.clone());
                 set
-            });
+            })
+            .iter()
+            .map(|node_id| node_id.name())
+            .collect();
 
         // Initialize DKG
         let (key_gen, broadcast_msg) =
-            KeyGen::initialize(&inner_locked.our_keys, threshold, pub_keys)?;
+            KeyGen::initialize(inner_locked.our_keys.name(), threshold, names)?;
 
         inner_locked.key_gen = Some(key_gen);
         Ok(broadcast_msg)
     }
 
     /// Broadcast given message to all the connected peers
-    pub fn broadcast(&mut self, msg: Message<NodeID>) -> Result<(), Error> {
+    pub fn broadcast(&mut self, msg: Message) -> Result<(), Error> {
         self.inner.lock().unwrap().broadcast(msg)
     }
 
     /// Begins timed phase transition
-    pub fn start_timed_phase_transition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
+    pub fn start_timed_phase_transition(&mut self) -> Result<Vec<Message>, Error> {
         self.inner.lock().unwrap().start_timed_phase_trasition()
     }
 
@@ -137,7 +140,7 @@ impl Member {
     }
 
     /// Generate keys from the key_gen
-    pub fn generate_keys(&self) -> Result<(BTreeSet<NodeID>, Outcome), Error> {
+    pub fn generate_keys(&self) -> Result<(BTreeSet<XorName>, Outcome), Error> {
         if let Some(ref key_gen) = self.inner.lock().unwrap().key_gen {
             match key_gen.generate_keys() {
                 Some(oc) => Ok(oc),
@@ -220,9 +223,15 @@ impl PartialOrd for Member {
 
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub struct NodeID {
-    name: String, // TODO: To be replaced by XorName?
+    name: XorName,
     signing_key: signing::PublicKey,
     _encryption_key: encryption::PublicKey,
+}
+
+impl NodeID {
+    pub fn name(&self) -> XorName {
+        self.name
+    }
 }
 
 struct SecretKeys {
@@ -249,10 +258,8 @@ impl KeyInfo {
             _encryption_keys: encryption_secret_key,
         };
 
-        let random_numb: u8 = thread_rng().gen();
-
         let public_id = NodeID {
-            name: format!("NODE ID: {:#?}", random_numb),
+            name: thread_rng().gen(),
             signing_key: signing_public_key,
             _encryption_key: encryption_public_key,
         };
@@ -266,21 +273,9 @@ impl KeyInfo {
     pub fn node_id(&self) -> NodeID {
         self.public_id.clone()
     }
-}
 
-impl TraitPublicId for NodeID {
-    type Signature = signing::Signature;
-
-    fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {
-        self.signing_key.verify(signature, data)
-    }
-}
-
-impl SecretId for KeyInfo {
-    type PublicId = NodeID;
-
-    fn public_id(&self) -> &Self::PublicId {
-        &self.public_id
+    pub fn name(&self) -> XorName {
+        self.public_id.name()
     }
 }
 
@@ -294,14 +289,14 @@ struct Inner {
     quic_p2p: QuicP2p,
     id: u64,
     group: HashMap<NodeID, SocketAddr>,
-    key_gen: Option<KeyGen<KeyInfo>>,
+    key_gen: Option<KeyGen>,
     our_keys: KeyInfo,
     non_responsive: bool,
 }
 
 impl PartialEq for Inner {
     fn eq(&self, other: &Self) -> bool {
-        self.our_keys.public_id().eq(other.our_keys.public_id())
+        self.our_keys.name().eq(&other.our_keys.name())
     }
 }
 
@@ -313,9 +308,7 @@ impl Ord for Inner {
 
 impl PartialOrd for Inner {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.our_keys
-            .public_id()
-            .partial_cmp(other.our_keys.public_id())
+        self.our_keys.name().partial_cmp(&other.our_keys.name())
     }
 }
 
@@ -374,7 +367,7 @@ impl Inner {
         }
     }
 
-    fn broadcast(&mut self, message: Message<NodeID>) -> Result<(), Error> {
+    fn broadcast(&mut self, message: Message) -> Result<(), Error> {
         let serialized_msg =
             serialize(&message).map_err(|e| Error::Serialization(e.to_string()))?;
         let msg = Bytes::from(serialized_msg);
@@ -387,7 +380,7 @@ impl Inner {
     }
 
     // Timed Phase transition needs to be called if we do not finalize automatically
-    fn start_timed_phase_trasition(&mut self) -> Result<Vec<Message<NodeID>>, Error> {
+    fn start_timed_phase_trasition(&mut self) -> Result<Vec<Message>, Error> {
         let (tx, rx) = channel();
         let _ = thread::spawn(move || {
             #[cfg(not(test))]

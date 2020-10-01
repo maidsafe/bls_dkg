@@ -15,7 +15,6 @@ mod rng_adapter;
 #[cfg(test)]
 mod tests;
 
-use crate::id::{PublicId, SecretId};
 use bincode::{self, deserialize, serialize};
 use encryptor::{Encryptor, Iv, Key};
 use message::Message;
@@ -34,6 +33,7 @@ use threshold_crypto::{
     serde_impl::FieldWrap,
     Fr, G1Affine, SecretKeyShare,
 };
+use xor_name::XorName;
 
 /// A local error while handling a message, that was not caused by that message being invalid.
 #[derive(Clone, Eq, err_derive::Error, PartialEq, Debug)]
@@ -178,13 +178,13 @@ pub enum Phase {
 }
 
 #[derive(Default)]
-struct InitializationAccumulator<P: PublicId> {
+struct InitializationAccumulator {
     senders: BTreeSet<u64>,
-    initializations: BTreeMap<(usize, usize, BTreeSet<P>), usize>,
+    initializations: BTreeMap<(usize, usize, BTreeSet<XorName>), usize>,
 }
 
-impl<P: PublicId> InitializationAccumulator<P> {
-    fn new() -> InitializationAccumulator<P> {
+impl InitializationAccumulator {
+    fn new() -> InitializationAccumulator {
         InitializationAccumulator {
             senders: BTreeSet::new(),
             initializations: BTreeMap::new(),
@@ -197,8 +197,8 @@ impl<P: PublicId> InitializationAccumulator<P> {
         m: usize,
         n: usize,
         sender: u64,
-        member_list: BTreeSet<P>,
-    ) -> Option<(usize, usize, BTreeSet<P>)> {
+        member_list: BTreeSet<XorName>,
+    ) -> Option<(usize, usize, BTreeSet<XorName>)> {
         if !self.senders.insert(sender) {
             return None;
         }
@@ -217,29 +217,29 @@ impl<P: PublicId> InitializationAccumulator<P> {
 }
 
 #[derive(Default)]
-struct ComplaintsAccumulator<P: PublicId> {
-    pub_keys: BTreeSet<P>,
+struct ComplaintsAccumulator {
+    names: BTreeSet<XorName>,
     threshold: usize,
     // Indexed by complaining targets.
-    complaints: BTreeMap<P, BTreeSet<P>>,
+    complaints: BTreeMap<XorName, BTreeSet<XorName>>,
 }
 
-impl<P: PublicId> ComplaintsAccumulator<P> {
-    fn new(pub_keys: BTreeSet<P>, threshold: usize) -> ComplaintsAccumulator<P> {
+impl ComplaintsAccumulator {
+    fn new(names: BTreeSet<XorName>, threshold: usize) -> ComplaintsAccumulator {
         ComplaintsAccumulator {
-            pub_keys,
+            names,
             threshold,
             complaints: BTreeMap::new(),
         }
     }
 
     // TODO: accusation shall be validated.
-    fn add_complaint(&mut self, sender_id: P, target_id: P, _msg: Vec<u8>) {
-        if !self.pub_keys.contains(&sender_id) || !self.pub_keys.contains(&target_id) {
+    fn add_complaint(&mut self, sender_id: XorName, target_id: XorName, _msg: Vec<u8>) {
+        if !self.names.contains(&sender_id) || !self.names.contains(&target_id) {
             return;
         }
 
-        match self.complaints.entry(target_id.clone()) {
+        match self.complaints.entry(target_id) {
             Entry::Occupied(mut entry) => {
                 let _ = entry.get_mut().insert(sender_id);
             }
@@ -253,25 +253,25 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
 
     // Returns the invalid peers that quorumn members complained against, together with the
     // non-contributors. Both shall be considered as invalid participants.
-    fn finalize_complaining_phase(&self) -> BTreeSet<P> {
+    fn finalize_complaining_phase(&self) -> BTreeSet<XorName> {
         let mut invalid_peers = BTreeSet::new();
 
         // Counts for how many times a member missed complaining against others validly.
         // If missed too many times, such member shall be considered as invalid directly.
-        let mut counts: BTreeMap<P, usize> = BTreeMap::new();
+        let mut counts: BTreeMap<XorName, usize> = BTreeMap::new();
 
         for (target_id, accusers) in self.complaints.iter() {
-            if accusers.len() > self.pub_keys.len() - self.threshold {
-                let _ = invalid_peers.insert(target_id.clone());
-                for peer in self.pub_keys.iter() {
+            if accusers.len() > self.names.len() - self.threshold {
+                let _ = invalid_peers.insert(*target_id);
+                for peer in self.names.iter() {
                     if !accusers.contains(peer) {
-                        *counts.entry(peer.clone()).or_insert(0usize) += 1;
+                        *counts.entry(*peer).or_insert(0usize) += 1;
                     }
                 }
             }
         }
         for (peer, times) in counts {
-            if times > self.pub_keys.len() / 2 {
+            if times > self.names.len() / 2 {
                 let _ = invalid_peers.insert(peer);
             }
         }
@@ -294,15 +294,15 @@ impl<P: PublicId> ComplaintsAccumulator<P> {
 ///      depend on a separate timer & checker against the key generator's current status)
 ///   e, repeat step c when there is incoming `Message`.
 ///   f, call `generate_keys` to get the public-key set and secret-key share, if the procedure finalized.
-pub struct KeyGen<S: SecretId> {
+pub struct KeyGen {
     /// Our node ID.
-    our_id: S::PublicId,
+    our_id: XorName,
     /// Our node index.
     our_index: u64,
-    /// The public keys of all nodes, by node ID.
-    pub_keys: BTreeSet<S::PublicId>,
+    /// The names of all nodes, by node ID.
+    names: BTreeSet<XorName>,
     /// Carry out encryption work during the DKG process.
-    encryptor: Encryptor<S::PublicId>,
+    encryptor: Encryptor,
     /// Proposed bivariate polynomials.
     parts: BTreeMap<u64, ProposalState>,
     /// The degree of the generated polynomial.
@@ -310,43 +310,42 @@ pub struct KeyGen<S: SecretId> {
     /// Current DKG phase.
     phase: Phase,
     /// Accumulates initializations.
-    initalization_accumulator: InitializationAccumulator<S::PublicId>,
+    initalization_accumulator: InitializationAccumulator,
     /// Accumulates complaints.
-    complaints_accumulator: ComplaintsAccumulator<S::PublicId>,
+    complaints_accumulator: ComplaintsAccumulator,
     /// Pending complain messages.
-    pending_complain_messages: Vec<Message<S::PublicId>>,
+    pending_complain_messages: Vec<Message>,
     /// Pending messages that cannot handle yet.
-    pending_messages: Vec<Message<S::PublicId>>,
+    pending_messages: Vec<Message>,
 }
 
-impl<S: SecretId> KeyGen<S> {
+impl KeyGen {
     /// Creates a new `KeyGen` instance, together with the `Initial` message that should be
     /// multicast to all nodes.
     pub fn initialize(
-        sec_key: &S,
+        our_id: XorName,
         threshold: usize,
-        pub_keys: BTreeSet<S::PublicId>,
-    ) -> Result<(KeyGen<S>, Message<S::PublicId>), Error> {
-        if pub_keys.len() < threshold {
+        names: BTreeSet<XorName>,
+    ) -> Result<(KeyGen, Message), Error> {
+        if names.len() < threshold {
             return Err(Error::Unknown);
         }
-        let our_id = sec_key.public_id().clone();
-        let our_index = if let Some(index) = pub_keys.iter().position(|id| *id == our_id) {
+        let our_index = if let Some(index) = names.iter().position(|id| *id == our_id) {
             index as u64
         } else {
             return Err(Error::Unknown);
         };
 
-        let key_gen = KeyGen::<S> {
+        let key_gen = KeyGen {
             our_id,
             our_index,
-            pub_keys: pub_keys.clone(),
-            encryptor: Encryptor::new(&pub_keys),
+            names: names.clone(),
+            encryptor: Encryptor::new(&names),
             parts: BTreeMap::new(),
             threshold,
             phase: Phase::Initialization,
             initalization_accumulator: InitializationAccumulator::new(),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys.clone(), threshold),
+            complaints_accumulator: ComplaintsAccumulator::new(names.clone(), threshold),
             pending_complain_messages: Vec::new(),
             pending_messages: Vec::new(),
         };
@@ -356,8 +355,8 @@ impl<S: SecretId> KeyGen<S> {
             Message::Initialization {
                 key_gen_id: our_index,
                 m: threshold,
-                n: pub_keys.len(),
-                member_list: pub_keys,
+                n: names.len(),
+                member_list: names,
             },
         ))
     }
@@ -370,8 +369,8 @@ impl<S: SecretId> KeyGen<S> {
     pub fn handle_message<R: RngCore>(
         &mut self,
         rng: &mut R,
-        msg: Message<S::PublicId>,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        msg: Message,
+    ) -> Result<Vec<Message>, Error> {
         if self.is_finalized() {
             return Ok(Vec::new());
         }
@@ -389,7 +388,7 @@ impl<S: SecretId> KeyGen<S> {
         }
     }
 
-    fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message<S::PublicId>> {
+    fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
         let pending_messages = std::mem::replace(&mut self.pending_messages, Vec::new());
         let mut msgs = Vec::new();
         for message in pending_messages {
@@ -408,8 +407,8 @@ impl<S: SecretId> KeyGen<S> {
     fn process_message<R: RngCore>(
         &mut self,
         rng: &mut R,
-        msg: Message<S::PublicId>,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        msg: Message,
+    ) -> Result<Vec<Message>, Error> {
         debug!(
             "{:?} with phase {:?} handle DKG message {:?}",
             self, self.phase, msg
@@ -443,8 +442,8 @@ impl<S: SecretId> KeyGen<S> {
         m: usize,
         n: usize,
         sender: u64,
-        member_list: BTreeSet<S::PublicId>,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        member_list: BTreeSet<XorName>,
+    ) -> Result<Vec<Message>, Error> {
         if self.phase != Phase::Initialization {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Initialization,
@@ -457,24 +456,24 @@ impl<S: SecretId> KeyGen<S> {
                 .add_initialization(m, n, sender, member_list)
         {
             self.threshold = m;
-            self.pub_keys = member_list;
+            self.names = member_list;
             self.phase = Phase::Contribution;
 
             let mut rng = rng_adapter::RngAdapter(&mut *rng);
             let our_part = BivarPoly::random(self.threshold, &mut rng);
             let ack = our_part.commitment();
-            let encrypt = |(i, pk): (usize, &S::PublicId)| {
+            let encrypt = |(i, name): (usize, &XorName)| {
                 let row = our_part.row(i + 1);
-                self.encryptor.encrypt(pk, &serialize(&row)?)
+                self.encryptor.encrypt(name, &serialize(&row)?)
             };
             let rows = self
-                .pub_keys
+                .names
                 .iter()
                 .enumerate()
                 .map(encrypt)
                 .collect::<Result<Vec<_>, Error>>()?;
             let result = self
-                .pub_keys
+                .names
                 .iter()
                 .enumerate()
                 .map(|(idx, _pk)| {
@@ -498,11 +497,7 @@ impl<S: SecretId> KeyGen<S> {
     // Handles a `Proposal` message during the `Contribution` phase.
     // When there is an invalidation happens, holds the `Complaint` message till broadcast out
     // when `finalize_contributing` being called.
-    fn handle_proposal(
-        &mut self,
-        sender_index: u64,
-        part: Part,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+    fn handle_proposal(&mut self, sender_index: u64, part: Part) -> Result<Vec<Message>, Error> {
         if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
@@ -514,7 +509,7 @@ impl<S: SecretId> KeyGen<S> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(Vec::new()),
             Err(_fault) => {
-                let msg = Message::Proposal::<S::PublicId> {
+                let msg = Message::Proposal {
                     key_gen_id: sender_index,
                     part,
                 };
@@ -535,7 +530,7 @@ impl<S: SecretId> KeyGen<S> {
         // The row is valid. Encrypt one value for each node and broadcast `Acknowledgment`.
         let mut values = Vec::new();
         let mut enc_values = Vec::new();
-        for (index, pk) in self.pub_keys.iter().enumerate() {
+        for (index, pk) in self.names.iter().enumerate() {
             let val = row.evaluate(index + 1);
             let ser_val = serialize(&FieldWrap(val))?;
             enc_values.push(self.encryptor.encrypt(pk, &ser_val)?);
@@ -543,7 +538,7 @@ impl<S: SecretId> KeyGen<S> {
         }
 
         let result = self
-            .pub_keys
+            .names
             .iter()
             .enumerate()
             .map(|(idx, _pk)| Message::Acknowledgment {
@@ -566,7 +561,7 @@ impl<S: SecretId> KeyGen<S> {
         &mut self,
         sender_index: u64,
         ack: Acknowledgment,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+    ) -> Result<Vec<Message>, Error> {
         if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
@@ -592,7 +587,7 @@ impl<S: SecretId> KeyGen<S> {
                 return Err(Error::MissingPart);
             }
             Err(fault) => {
-                let msg = Message::<S::PublicId>::Acknowledgment {
+                let msg = Message::Acknowledgment {
                     key_gen_id: sender_index,
                     ack,
                 };
@@ -613,14 +608,14 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     pub fn all_contribution_received(&self) -> bool {
-        self.pub_keys.len() == self.parts.len()
+        self.names.len() == self.parts.len()
             && self
                 .parts
                 .values()
-                .all(|part| part.acks.len() == self.pub_keys.len())
+                .all(|part| part.acks.len() == self.names.len())
     }
 
-    fn finalize_contributing_phase(&mut self) -> Result<Vec<Message<S::PublicId>>, Error> {
+    fn finalize_contributing_phase(&mut self) -> Result<Vec<Message>, Error> {
         self.phase = Phase::Complaining;
 
         for non_contributor in self.non_contributors().0 {
@@ -651,23 +646,23 @@ impl<S: SecretId> KeyGen<S> {
         Ok(mem::take(&mut self.pending_complain_messages))
     }
 
-    fn non_contributors(&self) -> (BTreeSet<u64>, BTreeSet<S::PublicId>) {
+    fn non_contributors(&self) -> (BTreeSet<u64>, BTreeSet<XorName>) {
         let mut non_idxes = BTreeSet::new();
         let mut non_ids = BTreeSet::new();
         let mut missing_times = BTreeMap::new();
-        for (idx, id) in self.pub_keys.iter().enumerate() {
+        for (idx, name) in self.names.iter().enumerate() {
             if let Some(proposal_sate) = self.parts.get(&(idx as u64)) {
                 if !proposal_sate.acks.contains(&(idx as u64)) {
                     let times = missing_times.entry(idx).or_insert_with(|| 0);
                     *times += 1;
-                    if *times > self.pub_keys.len() / 2 {
+                    if *times > self.names.len() / 2 {
                         let _ = non_idxes.insert(idx as u64);
-                        let _ = non_ids.insert(id.clone());
+                        let _ = non_ids.insert(*name);
                     }
                 }
             } else {
                 let _ = non_idxes.insert(idx as u64);
-                let _ = non_ids.insert(id.clone());
+                let _ = non_ids.insert(*name);
             }
         }
         (non_idxes, non_ids)
@@ -680,7 +675,7 @@ impl<S: SecretId> KeyGen<S> {
     pub fn timed_phase_transition<R: RngCore>(
         &mut self,
         rng: &mut R,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+    ) -> Result<Vec<Message>, Error> {
         debug!("{:?} current phase is {:?}", self, self.phase);
         match self.phase {
             Phase::Contribution => match self.finalize_contributing_phase() {
@@ -716,7 +711,7 @@ impl<S: SecretId> KeyGen<S> {
         sender_index: u64,
         target_index: u64,
         invalid_msg: Vec<u8>,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+    ) -> Result<Vec<Message>, Error> {
         if self.phase != Phase::Complaining {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Complaining,
@@ -739,9 +734,9 @@ impl<S: SecretId> KeyGen<S> {
     fn finalize_complaining_phase<R: RngCore>(
         &mut self,
         rng: &mut R,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+    ) -> Result<Vec<Message>, Error> {
         let failings = self.complaints_accumulator.finalize_complaining_phase();
-        if failings.len() >= self.pub_keys.len() - self.threshold {
+        if failings.len() >= self.names.len() - self.threshold {
             let mut result = BTreeSet::new();
             failings.iter().for_each(|pk| {
                 if let Some(index) = self.node_index(pk) {
@@ -769,7 +764,7 @@ impl<S: SecretId> KeyGen<S> {
 
         if !failings.is_empty() {
             for failing in failings.iter() {
-                let _ = self.pub_keys.remove(failing);
+                let _ = self.names.remove(failing);
             }
             self.our_index = self.node_index(&self.our_id).ok_or(Error::Unknown)?;
         } else if self.is_ready() {
@@ -783,18 +778,18 @@ impl<S: SecretId> KeyGen<S> {
         let mut rng = rng_adapter::RngAdapter(&mut *rng);
         let our_part = BivarPoly::random(self.threshold, &mut rng);
         let justify = our_part.commitment();
-        let encrypt = |(i, pk): (usize, &S::PublicId)| {
+        let encrypt = |(i, name): (usize, &XorName)| {
             let row = our_part.row(i + 1);
-            self.encryptor.encrypt(pk, &serialize(&row)?)
+            self.encryptor.encrypt(name, &serialize(&row)?)
         };
         let rows = self
-            .pub_keys
+            .names
             .iter()
             .enumerate()
             .map(encrypt)
             .collect::<Result<Vec<_>, Error>>()?;
 
-        self.pub_keys.iter().enumerate().for_each(|(idx, _pk)| {
+        self.names.iter().enumerate().for_each(|(idx, _pk)| {
             if let Ok(ser_row) = serialize(&our_part.row(idx + 1)) {
                 result.push(Message::Proposal {
                     key_gen_id: self.our_index,
@@ -815,8 +810,8 @@ impl<S: SecretId> KeyGen<S> {
     fn handle_justification(
         &mut self,
         _sender_index: u64,
-        _keys_map: BTreeMap<S::PublicId, (Key, Iv)>,
-    ) -> Result<Vec<Message<S::PublicId>>, Error> {
+        _keys_map: BTreeMap<XorName, (Key, Iv)>,
+    ) -> Result<Vec<Message>, Error> {
         // TODO: Need to decide how the justification and recover procedure take out.
         Ok(Vec::new())
     }
@@ -828,18 +823,18 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Returns the index of the node, or `None` if it is unknown.
-    fn node_index(&self, node_id: &S::PublicId) -> Option<u64> {
-        self.pub_keys
+    fn node_index(&self, node_id: &XorName) -> Option<u64> {
+        self.names
             .iter()
             .position(|id| id == node_id)
             .map(|index| index as u64)
     }
 
     /// Returns the id of the index, or `None` if it is unknown.
-    fn node_id_from_index(&self, node_index: u64) -> Option<S::PublicId> {
-        for (i, pk) in self.pub_keys.iter().enumerate() {
+    fn node_id_from_index(&self, node_index: u64) -> Option<XorName> {
+        for (i, name) in self.names.iter().enumerate() {
             if i == node_index as usize {
-                return Some(pk.clone());
+                return Some(*name);
             }
         }
         None
@@ -856,7 +851,7 @@ impl<S: SecretId> KeyGen<S> {
 
     // Returns `true` if all parts are complete to safely generate the new key.
     fn is_ready(&self) -> bool {
-        self.complete_parts_count() == self.pub_keys.len()
+        self.complete_parts_count() == self.names.len()
     }
 
     /// Returns `true` if in the phase of Finalization.
@@ -865,7 +860,7 @@ impl<S: SecretId> KeyGen<S> {
     }
 
     /// Returns the new secret key share and the public key set.
-    pub fn generate_keys(&self) -> Option<(BTreeSet<S::PublicId>, Outcome)> {
+    pub fn generate_keys(&self) -> Option<(BTreeSet<XorName>, Outcome)> {
         if !self.is_finalized() {
             return None;
         }
@@ -879,26 +874,23 @@ impl<S: SecretId> KeyGen<S> {
             sk_val.add_assign(&row.evaluate(0));
         }
         let sk = SecretKeyShare::from_mut(&mut sk_val);
-        Some((
-            self.pub_keys.clone(),
-            Outcome::new(pk_commitment.into(), sk),
-        ))
+        Some((self.names.clone(), Outcome::new(pk_commitment.into(), sk)))
     }
 
     /// This function shall be called when the DKG procedure not reach Finalization phase and before
     /// discarding the instace. It returns potential invalid peers that causing the blocking, if
     /// any and provable.
-    pub fn possible_blockers(&self) -> BTreeSet<S::PublicId> {
+    pub fn possible_blockers(&self) -> BTreeSet<XorName> {
         let mut result = BTreeSet::new();
         match self.phase {
             Phase::Initialization => {
-                for (index, pk) in self.pub_keys.iter().enumerate() {
+                for (index, name) in self.names.iter().enumerate() {
                     if !self
                         .initalization_accumulator
                         .senders
                         .contains(&(index as u64))
                     {
-                        let _ = result.insert(pk.clone());
+                        let _ = result.insert(*name);
                     }
                 }
             }
@@ -912,9 +904,9 @@ impl<S: SecretId> KeyGen<S> {
                 // in these two phases. Hence here a strict rule is undertaken that: any missing
                 // vote will be considered as a potential non-voter.
                 for part in self.parts.values() {
-                    for (index, pk) in self.pub_keys.iter().enumerate() {
+                    for (index, name) in self.names.iter().enumerate() {
                         if !part.acks.contains(&(index as u64)) {
-                            let _ = result.insert(pk.clone());
+                            let _ = result.insert(*name);
                         }
                     }
                 }
@@ -937,7 +929,7 @@ impl<S: SecretId> KeyGen<S> {
             enc_rows,
         }: Part,
     ) -> Result<Option<Poly>, PartFault> {
-        if enc_rows.len() != self.pub_keys.len() {
+        if enc_rows.len() != self.names.len() {
             return Err(PartFault::RowCount);
         }
         if receiver != self.our_index {
@@ -968,7 +960,7 @@ impl<S: SecretId> KeyGen<S> {
         sender_index: u64,
         Acknowledgment(proposer_index, receiver_index, ser_val, values): Acknowledgment,
     ) -> Result<(), AcknowledgmentFault> {
-        if values.len() != self.pub_keys.len() {
+        if values.len() != self.names.len() {
             return Err(AcknowledgmentFault::ValueCount);
         }
         if receiver_index != self.our_index {
@@ -1006,40 +998,38 @@ impl<S: SecretId> KeyGen<S> {
     }
 }
 
-// https://github.com/rust-lang/rust/issues/52560
-// Cannot derive Debug without changing the type parameter
-impl<S: SecretId> Debug for KeyGen<S> {
+impl Debug for KeyGen {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "KeyGen{{{:?}}}", self.our_id)
     }
 }
 
 #[cfg(test)]
-impl<S: SecretId> KeyGen<S> {
+impl KeyGen {
     /// Returns the list of the final participants.
-    pub fn pub_keys(&self) -> &BTreeSet<S::PublicId> {
-        &self.pub_keys
+    pub fn names(&self) -> &BTreeSet<XorName> {
+        &self.names
     }
 
     /// Initialize an instance with some pre-defined value, only for testing usage.
     pub fn initialize_for_test(
-        our_id: S::PublicId,
+        our_id: XorName,
         our_index: u64,
-        pub_keys: BTreeSet<S::PublicId>,
+        names: BTreeSet<XorName>,
         threshold: usize,
         phase: Phase,
-    ) -> KeyGen<S> {
-        assert!(pub_keys.len() >= threshold);
-        KeyGen::<S> {
+    ) -> KeyGen {
+        assert!(names.len() >= threshold);
+        KeyGen {
             our_id,
             our_index,
-            pub_keys: pub_keys.clone(),
-            encryptor: Encryptor::new(&pub_keys),
+            names: names.clone(),
+            encryptor: Encryptor::new(&names),
             parts: BTreeMap::new(),
             threshold,
             phase,
             initalization_accumulator: InitializationAccumulator::new(),
-            complaints_accumulator: ComplaintsAccumulator::new(pub_keys, threshold),
+            complaints_accumulator: ComplaintsAccumulator::new(names, threshold),
             pending_complain_messages: Vec::new(),
             pending_messages: Vec::new(),
         }

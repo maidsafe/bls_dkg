@@ -7,44 +7,38 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::id::{PublicId, SecretId};
 use rand::Rng;
 use serde_derive::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    collections::hash_map::DefaultHasher,
     fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
 };
-
-pub static NAMES: &[&str] = &[
-    "Alice", "Bob", "Carol", "Dave", "Eric", "Fred", "Gina", "Hank", "Iris", "Judy", "Kent",
-    "Lucy", "Mike", "Nina", "Oran", "Paul", "Quin", "Rose", "Stan", "Tina", "Ulf", "Vera", "Will",
-    "Xaviera", "Yakov", "Zaida", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-];
+use xor_name::XorName;
 
 /// **NOT FOR PRODUCTION USE**: Mock type implementing `PublicId` and `SecretId` traits.  For
 /// non-mocks, these two traits must be implemented by two separate types; a public key and secret
 /// key respectively.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PeerId {
-    id: String,
+    id: XorName,
     public_key: PublicKey,
     secret_key: SecretKey,
 }
 
 impl PeerId {
-    pub fn new(id: &str) -> Self {
+    pub fn new() -> Self {
         let (public_key, secret_key) = gen_keypair();
+        let mut rng = rand::thread_rng();
         Self {
-            id: id.to_owned(),
+            id: rng.gen(),
             public_key,
             secret_key,
         }
     }
 
-    pub fn sec_key(&self) -> &Self {
-        &self
+    pub fn name(&self) -> XorName {
+        self.id
     }
 }
 
@@ -81,31 +75,11 @@ impl Ord for PeerId {
     }
 }
 
-impl PublicId for PeerId {
-    type Signature = Signature;
-
-    fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(data);
-        hasher.write(&self.public_key.0);
-        let hash = hasher.finish().to_le_bytes();
-
-        signature.0[..hash.len()] == hash
-    }
-}
-
-impl SecretId for PeerId {
-    type PublicId = PeerId;
-
-    fn public_id(&self) -> &Self::PublicId {
-        &self
-    }
-}
-
-/// **NOT FOR PRODUCTION USE**: Returns a collection of mock node IDs with human-readable names.
+/// **NOT FOR PRODUCTION USE**: Returns a collection of mock node IDs.
 pub fn create_ids(count: usize) -> Vec<PeerId> {
-    assert!(count <= NAMES.len());
-    NAMES.iter().take(count).cloned().map(PeerId::new).collect()
+    let mut ids: Vec<PeerId> = (0..count).map(|_| PeerId::new()).collect();
+    ids.sort();
+    ids
 }
 
 const SIGNATURE_LENGTH: usize = 32;
