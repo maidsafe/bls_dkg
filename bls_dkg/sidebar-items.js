@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["key_gen",""],["member",""]]});
+initSidebarItems({"mod":[["key_gen",""]]});

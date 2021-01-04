@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `src/key_gen/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../bls_dkg/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/key_gen/mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="shortcut icon" href="https://maidsafe.net/img/favicon.ico"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../bls_dkg/index.html'><div class='logo-container'><img src='https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
                 <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
@@ -1080,6 +1080,9 @@
 <span id="1079">1079</span>
 <span id="1080">1080</span>
 <span id="1081">1081</span>
+<span id="1082">1082</span>
+<span id="1083">1083</span>
+<span id="1084">1084</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1119,36 +1122,37 @@
 <span class="kw">use</span> <span class="ident">xor_name</span>::<span class="ident">XorName</span>;
 
 <span class="doccomment">/// A local error while handling a message, that was not caused by that message being invalid.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">err_derive</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>)]</span>
+<span class="attribute">#[<span class="ident">non_exhaustive</span>]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">thiserror</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Error</span> {
     <span class="doccomment">/// Unknown error.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Unknown&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Unknown&quot;</span>)]</span>
     <span class="ident">Unknown</span>,
     <span class="doccomment">/// Unknown sender.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Unknown sender&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Unknown sender&quot;</span>)]</span>
     <span class="ident">UnknownSender</span>,
     <span class="doccomment">/// Failed to serialize message.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Serialization error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Serialization error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
     <span class="ident">Serialization</span>(<span class="ident">String</span>),
     <span class="doccomment">/// Network error from Quic-P2P.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;QuicP2P error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;QuicP2P error: {}&quot;</span>, <span class="ident">_0</span>)]</span>
     <span class="ident">QuicP2P</span>(<span class="ident">String</span>),
     <span class="doccomment">/// Failed to encrypt message.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Encryption error&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Encryption error&quot;</span>)]</span>
     <span class="ident">Encryption</span>,
     <span class="doccomment">/// Failed to finalize Complaint phase due to too many non-voters.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Too many non-voters error&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Too many non-voters error&quot;</span>)]</span>
     <span class="ident">TooManyNonVoters</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>),
     <span class="doccomment">/// Unexpected phase.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Unexpected phase&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Unexpected phase&quot;</span>)]</span>
     <span class="ident">UnexpectedPhase</span> { <span class="ident">expected</span>: <span class="ident">Phase</span>, <span class="ident">actual</span>: <span class="ident">Phase</span> },
     <span class="doccomment">/// Ack on a missed part.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;ACK on missed part&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;ACK on missed part&quot;</span>)]</span>
     <span class="ident">MissingPart</span>,
 }
 
-<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="ident">bincode</span>::<span class="ident">ErrorKind</span><span class="op">&gt;&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">err</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">bincode</span>::<span class="ident">ErrorKind</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">Error</span> {
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="ident">bincode</span>::<span class="ident">ErrorKind</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">err</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">bincode</span>::<span class="ident">ErrorKind</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Error</span> {
         <span class="ident">Error</span>::<span class="ident">Serialization</span>(<span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">err</span>))
     }
 }
@@ -1163,11 +1167,11 @@
     <span class="comment">// serialized row for the receiver.</span>
     <span class="ident">ser_row</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     <span class="comment">// Encrypted rows from the sender.</span>
-    <span class="ident">enc_rows</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;&gt;</span>,
+    <span class="ident">enc_rows</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Part</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;Part&quot;</span>)
             .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;&lt;receiver {}&gt;&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">receiver</span>))
             .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;&lt;degree {}&gt;&quot;</span>, <span class="self">self</span>.<span class="ident">commitment</span>.<span class="ident">degree</span>()))
@@ -1183,10 +1187,10 @@
 <span class="doccomment">/// For each node, it contains `proposal_index, receiver_index, serialised value for the receiver,</span>
 <span class="doccomment">/// encrypted values from the sender`.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>, <span class="ident">Clone</span>, <span class="ident">Hash</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Acknowledgment</span>(<span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;&gt;</span>);
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Acknowledgment</span>(<span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Acknowledgment</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;Acknowledgment&quot;</span>)
             .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;&lt;proposer {}&gt;&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>))
             .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;&lt;receiver {}&gt;&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">1</span>))
@@ -1203,14 +1207,14 @@
     <span class="doccomment">/// The verified values we received from `Acknowledgment` messages.</span>
     <span class="ident">values</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">u64</span>, <span class="ident">Fr</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The encrypted values received from the proposor.</span>
-    <span class="ident">enc_values</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;&gt;</span>,
+    <span class="ident">enc_values</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The nodes which have committed.</span>
     <span class="ident">acks</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ProposalState</span> {
     <span class="doccomment">/// Creates a new part state with a commitment.</span>
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">commitment</span>: <span class="ident">BivarCommitment</span>) <span class="op">-&gt;</span> <span class="ident">ProposalState</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">commitment</span>: <span class="ident">BivarCommitment</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ProposalState</span> {
         <span class="ident">ProposalState</span> {
             <span class="ident">commitment</span>,
             <span class="ident">values</span>: <span class="ident">BTreeMap</span>::<span class="ident">new</span>(),
@@ -1219,13 +1223,13 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">is_complete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_complete</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">acks</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="ident">threshold</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">serde</span>::<span class="ident">Deserialize</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ProposalState</span> {
-    <span class="kw">fn</span> <span class="ident">deserialize</span><span class="op">&lt;</span><span class="ident">D</span>: <span class="ident">serde</span>::<span class="ident">Deserializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;&gt;</span>(<span class="ident">deserializer</span>: <span class="ident">D</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">D</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">deserialize</span><span class="op">&lt;</span><span class="ident">D</span>: <span class="ident">serde</span>::<span class="ident">Deserializer</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">deserializer</span>: <span class="ident">D</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="ident">D</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">commitment</span>, <span class="ident">values</span>, <span class="ident">enc_values</span>, <span class="ident">acks</span>) <span class="op">=</span> <span class="ident">serde</span>::<span class="ident">Deserialize</span>::<span class="ident">deserialize</span>(<span class="ident">deserializer</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">values</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">u64</span>, <span class="ident">FieldWrap</span><span class="op">&lt;</span><span class="ident">Fr</span><span class="op">&gt;</span>)<span class="op">&gt;</span> <span class="op">=</span> <span class="ident">values</span>;
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
@@ -1267,7 +1271,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">InitializationAccumulator</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-&gt;</span> <span class="ident">InitializationAccumulator</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">InitializationAccumulator</span> {
         <span class="ident">InitializationAccumulator</span> {
             <span class="ident">senders</span>: <span class="ident">BTreeSet</span>::<span class="ident">new</span>(),
             <span class="ident">initializations</span>: <span class="ident">BTreeMap</span>::<span class="ident">new</span>(),
@@ -1281,15 +1285,15 @@
         <span class="ident">n</span>: <span class="ident">usize</span>,
         <span class="ident">sender</span>: <span class="ident">u64</span>,
         <span class="ident">member_list</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">usize</span>, <span class="ident">usize</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>)<span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">usize</span>, <span class="ident">usize</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>)<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">senders</span>.<span class="ident">insert</span>(<span class="ident">sender</span>) {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
 
         <span class="kw">let</span> <span class="ident">paras</span> <span class="op">=</span> (<span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">member_list</span>);
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">value</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">initializations</span>.<span class="ident">get_mut</span>(<span class="kw-2">&amp;</span><span class="ident">paras</span>) {
-            <span class="kw-2">*</span><span class="ident">value</span> <span class="op">+=</span> <span class="number">1</span>;
-            <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">value</span> <span class="op">&gt;=</span> <span class="ident">m</span> {
+            <span class="kw-2">*</span><span class="ident">value</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+            <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">value</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">m</span> {
                 <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">paras</span>);
             }
         } <span class="kw">else</span> {
@@ -1304,11 +1308,11 @@
     <span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     <span class="ident">threshold</span>: <span class="ident">usize</span>,
     <span class="comment">// Indexed by complaining targets.</span>
-    <span class="ident">complaints</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;&gt;</span>,
+    <span class="ident">complaints</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ComplaintsAccumulator</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-&gt;</span> <span class="ident">ComplaintsAccumulator</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">threshold</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ComplaintsAccumulator</span> {
         <span class="ident">ComplaintsAccumulator</span> {
             <span class="ident">names</span>,
             <span class="ident">threshold</span>,
@@ -1318,15 +1322,15 @@
 
     <span class="comment">// TODO: accusation shall be validated.</span>
     <span class="kw">fn</span> <span class="ident">add_complaint</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sender_id</span>: <span class="ident">XorName</span>, <span class="ident">target_id</span>: <span class="ident">XorName</span>, <span class="ident">_msg</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) {
-        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">names</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">sender_id</span>) <span class="op">||</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">names</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">target_id</span>) {
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">names</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">sender_id</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">names</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">target_id</span>) {
             <span class="kw">return</span>;
         }
 
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">complaints</span>.<span class="ident">entry</span>(<span class="ident">target_id</span>) {
-            <span class="ident">Entry</span>::<span class="ident">Occupied</span>(<span class="kw-2">mut</span> <span class="ident">entry</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Entry</span>::<span class="ident">Occupied</span>(<span class="kw-2">mut</span> <span class="ident">entry</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">entry</span>.<span class="ident">get_mut</span>().<span class="ident">insert</span>(<span class="ident">sender_id</span>);
             }
-            <span class="ident">Entry</span>::<span class="ident">Vacant</span>(<span class="ident">entry</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Entry</span>::<span class="ident">Vacant</span>(<span class="ident">entry</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">targets</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">targets</span>.<span class="ident">insert</span>(<span class="ident">target_id</span>);
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">entry</span>.<span class="ident">insert</span>(<span class="ident">targets</span>);
@@ -1336,7 +1340,7 @@
 
     <span class="comment">// Returns the invalid peers that quorumn members complained against, together with the</span>
     <span class="comment">// non-contributors. Both shall be considered as invalid participants.</span>
-    <span class="kw">fn</span> <span class="ident">finalize_complaining_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">finalize_complaining_phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">invalid_peers</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
 
         <span class="comment">// Counts for how many times a member missed complaining against others validly.</span>
@@ -1348,7 +1352,7 @@
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">invalid_peers</span>.<span class="ident">insert</span>(<span class="kw-2">*</span><span class="ident">target_id</span>);
                 <span class="kw">for</span> <span class="ident">peer</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>() {
                     <span class="kw">if</span> <span class="op">!</span><span class="ident">accusers</span>.<span class="ident">contains</span>(<span class="ident">peer</span>) {
-                        <span class="kw-2">*</span><span class="ident">counts</span>.<span class="ident">entry</span>(<span class="kw-2">*</span><span class="ident">peer</span>).<span class="ident">or_insert</span>(<span class="number">0usize</span>) <span class="op">+=</span> <span class="number">1</span>;
+                        <span class="kw-2">*</span><span class="ident">counts</span>.<span class="ident">entry</span>(<span class="kw-2">*</span><span class="ident">peer</span>).<span class="ident">or_insert</span>(<span class="number">0usize</span>) <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                     }
                 }
             }
@@ -1409,11 +1413,11 @@
         <span class="ident">our_id</span>: <span class="ident">XorName</span>,
         <span class="ident">threshold</span>: <span class="ident">usize</span>,
         <span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">KeyGen</span>, <span class="ident">Message</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">KeyGen</span>, <span class="ident">Message</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">threshold</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Unknown</span>);
         }
-        <span class="kw">let</span> <span class="ident">our_index</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">index</span>) <span class="op">=</span> <span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">position</span>(<span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">id</span> <span class="op">==</span> <span class="ident">our_id</span>) {
+        <span class="kw">let</span> <span class="ident">our_index</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">index</span>) <span class="op">=</span> <span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">position</span>(<span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">id</span> <span class="op">=</span><span class="op">=</span> <span class="ident">our_id</span>) {
             <span class="ident">index</span> <span class="kw">as</span> <span class="ident">u64</span>
         } <span class="kw">else</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Unknown</span>);
@@ -1444,7 +1448,7 @@
         ))
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">Phase</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Phase</span> {
         <span class="self">self</span>.<span class="ident">phase</span>
     }
 
@@ -1453,25 +1457,25 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_finalized</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>());
         }
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">process_message</span>(<span class="ident">rng</span>, <span class="ident">msg</span>.<span class="ident">clone</span>());
         <span class="kw">match</span> <span class="ident">result</span> {
-            <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">msgs</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">msgs</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">msgs</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
                 <span class="prelude-val">Ok</span>(<span class="ident">msgs</span>)
             }
-            <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> { .. }) <span class="op">|</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">MissingPart</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> { .. }) <span class="op">|</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">MissingPart</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">pending_messages</span>.<span class="ident">push</span>(<span class="ident">msg</span>);
                 <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>())
             }
-            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=&gt;</span> <span class="ident">result</span>,
+            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">result</span>,
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">poll_pending_messages</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) <span class="op">-&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">poll_pending_messages</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">pending_messages</span> <span class="op">=</span> <span class="ident">std</span>::<span class="ident">mem</span>::<span class="ident">replace</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">pending_messages</span>, <span class="ident">Vec</span>::<span class="ident">new</span>());
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msgs</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
         <span class="kw">for</span> <span class="ident">message</span> <span class="kw">in</span> <span class="ident">pending_messages</span> {
@@ -1491,7 +1495,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="macro">debug</span><span class="macro">!</span>(
             <span class="string">&quot;{:?} with phase {:?} handle DKG message {:?}&quot;</span>,
             <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>, <span class="ident">msg</span>
@@ -1502,18 +1506,18 @@
                 <span class="ident">m</span>,
                 <span class="ident">n</span>,
                 <span class="ident">member_list</span>,
-            } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_initialization</span>(<span class="ident">rng</span>, <span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">key_gen_id</span>, <span class="ident">member_list</span>),
-            <span class="ident">Message</span>::<span class="ident">Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>),
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_initialization</span>(<span class="ident">rng</span>, <span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">key_gen_id</span>, <span class="ident">member_list</span>),
+            <span class="ident">Message</span>::<span class="ident">Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>),
             <span class="ident">Message</span>::<span class="ident">Complaint</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">target</span>,
                 <span class="ident">msg</span>,
-            } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_complaint</span>(<span class="ident">key_gen_id</span>, <span class="ident">target</span>, <span class="ident">msg</span>),
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_complaint</span>(<span class="ident">key_gen_id</span>, <span class="ident">target</span>, <span class="ident">msg</span>),
             <span class="ident">Message</span>::<span class="ident">Justification</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">keys_map</span>,
-            } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_justification</span>(<span class="ident">key_gen_id</span>, <span class="ident">keys_map</span>),
-            <span class="ident">Message</span>::<span class="ident">Acknowledgment</span> { <span class="ident">key_gen_id</span>, <span class="ident">ack</span> } <span class="op">=&gt;</span> <span class="self">self</span>.<span class="ident">handle_ack</span>(<span class="ident">key_gen_id</span>, <span class="ident">ack</span>),
+            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_justification</span>(<span class="ident">key_gen_id</span>, <span class="ident">keys_map</span>),
+            <span class="ident">Message</span>::<span class="ident">Acknowledgment</span> { <span class="ident">key_gen_id</span>, <span class="ident">ack</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_ack</span>(<span class="ident">key_gen_id</span>, <span class="ident">ack</span>),
         }
     }
 
@@ -1526,8 +1530,8 @@
         <span class="ident">n</span>: <span class="ident">usize</span>,
         <span class="ident">sender</span>: <span class="ident">u64</span>,
         <span class="ident">member_list</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!=</span> <span class="ident">Phase</span>::<span class="ident">Initialization</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Initialization</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Initialization</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
@@ -1554,7 +1558,7 @@
                 .<span class="ident">iter</span>()
                 .<span class="ident">enumerate</span>()
                 .<span class="ident">map</span>(<span class="ident">encrypt</span>)
-                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;&gt;</span>()<span class="question-mark">?</span>;
+                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">names</span>
                 .<span class="ident">iter</span>()
@@ -1571,7 +1575,7 @@
                         },
                     })
                 })
-                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;&gt;</span>()<span class="question-mark">?</span>;
+                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">result</span>);
         }
         <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>())
@@ -1580,8 +1584,8 @@
     <span class="comment">// Handles a `Proposal` message during the `Contribution` phase.</span>
     <span class="comment">// When there is an invalidation happens, holds the `Complaint` message till broadcast out</span>
     <span class="comment">// when `finalize_contributing` being called.</span>
-    <span class="kw">fn</span> <span class="ident">handle_proposal</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sender_index</span>: <span class="ident">u64</span>, <span class="ident">part</span>: <span class="ident">Part</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">||</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span>) {
+    <span class="kw">fn</span> <span class="ident">handle_proposal</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sender_index</span>: <span class="ident">u64</span>, <span class="ident">part</span>: <span class="ident">Part</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
@@ -1589,9 +1593,9 @@
         }
 
         <span class="kw">let</span> <span class="ident">row</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">handle_part_or_fault</span>(<span class="ident">sender_index</span>, <span class="ident">part</span>.<span class="ident">clone</span>()) {
-            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">row</span>)) <span class="op">=&gt;</span> <span class="ident">row</span>,
-            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) <span class="op">=&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>()),
-            <span class="prelude-val">Err</span>(<span class="ident">_fault</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">row</span>)) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">row</span>,
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>()),
+            <span class="prelude-val">Err</span>(<span class="ident">_fault</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">Proposal</span> {
                     <span class="ident">key_gen_id</span>: <span class="ident">sender_index</span>,
                     <span class="ident">part</span>,
@@ -1644,24 +1648,24 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">sender_index</span>: <span class="ident">u64</span>,
         <span class="ident">ack</span>: <span class="ident">Acknowledgment</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">||</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
             });
         }
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">handle_ack_or_fault</span>(<span class="ident">sender_index</span>, <span class="ident">ack</span>.<span class="ident">clone</span>()) {
-            <span class="prelude-val">Ok</span>(()) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">all_contribution_received</span>() {
-                    <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span> {
+                    <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span> {
                         <span class="self">self</span>.<span class="ident">become_finalization</span>();
                     } <span class="kw">else</span> {
                         <span class="kw">return</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>();
                     }
                 }
             }
-            <span class="prelude-val">Err</span>(<span class="ident">AcknowledgmentFault</span>::<span class="ident">MissingPart</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">AcknowledgmentFault</span>::<span class="ident">MissingPart</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">debug</span><span class="macro">!</span>(
                     <span class="string">&quot;{:?} MissingPart on Ack not causing a complain, /
                         return with error to trigger an outside cache&quot;</span>,
@@ -1669,7 +1673,7 @@
                 );
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">MissingPart</span>);
             }
-            <span class="prelude-val">Err</span>(<span class="ident">fault</span>) <span class="op">=&gt;</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">fault</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message</span>::<span class="ident">Acknowledgment</span> {
                     <span class="ident">key_gen_id</span>: <span class="ident">sender_index</span>,
                     <span class="ident">ack</span>,
@@ -1690,15 +1694,15 @@
         <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>())
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_contribution_received</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">len</span>()
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_contribution_received</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">len</span>()
             <span class="op">&amp;&amp;</span> <span class="self">self</span>
                 .<span class="ident">parts</span>
                 .<span class="ident">values</span>()
-                .<span class="ident">all</span>(<span class="op">|</span><span class="ident">part</span><span class="op">|</span> <span class="ident">part</span>.<span class="ident">acks</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>())
+                .<span class="ident">all</span>(<span class="op">|</span><span class="ident">part</span><span class="op">|</span> <span class="ident">part</span>.<span class="ident">acks</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>())
     }
 
-    <span class="kw">fn</span> <span class="ident">finalize_contributing_phase</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">finalize_contributing_phase</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Complaining</span>;
 
         <span class="kw">for</span> <span class="ident">non_contributor</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">non_contributors</span>().<span class="number">0</span> {
@@ -1729,15 +1733,15 @@
         <span class="prelude-val">Ok</span>(<span class="ident">mem</span>::<span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">pending_complain_messages</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">non_contributors</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> (<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) {
+    <span class="kw">fn</span> <span class="ident">non_contributors</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>, <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">non_idxes</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">non_ids</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">missing_times</span> <span class="op">=</span> <span class="ident">BTreeMap</span>::<span class="ident">new</span>();
         <span class="kw">for</span> (<span class="ident">idx</span>, <span class="ident">name</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">proposal_sate</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span>(<span class="ident">idx</span> <span class="kw">as</span> <span class="ident">u64</span>)) {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">proposal_sate</span>.<span class="ident">acks</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span>(<span class="ident">idx</span> <span class="kw">as</span> <span class="ident">u64</span>)) {
-                    <span class="kw">let</span> <span class="ident">times</span> <span class="op">=</span> <span class="ident">missing_times</span>.<span class="ident">entry</span>(<span class="ident">idx</span>).<span class="ident">or_insert_with</span>(<span class="op">||</span> <span class="number">0</span>);
-                    <span class="kw-2">*</span><span class="ident">times</span> <span class="op">+=</span> <span class="number">1</span>;
+                    <span class="kw">let</span> <span class="ident">times</span> <span class="op">=</span> <span class="ident">missing_times</span>.<span class="ident">entry</span>(<span class="ident">idx</span>).<span class="ident">or_insert_with</span>(<span class="op">|</span><span class="op">|</span> <span class="number">0</span>);
+                    <span class="kw-2">*</span><span class="ident">times</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                     <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">times</span> <span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">/</span> <span class="number">2</span> {
                         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">non_idxes</span>.<span class="ident">insert</span>(<span class="ident">idx</span> <span class="kw">as</span> <span class="ident">u64</span>);
                         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">non_ids</span>.<span class="ident">insert</span>(<span class="kw-2">*</span><span class="ident">name</span>);
@@ -1758,33 +1762,33 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">timed_phase_transition</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;{:?} current phase is {:?}&quot;</span>, <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">phase</span> {
-            <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">=&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>() {
-                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>() {
+                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">messages</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
                     <span class="prelude-val">Ok</span>(<span class="ident">messages</span>)
                 }
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
+                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
             },
-            <span class="ident">Phase</span>::<span class="ident">Complaining</span> <span class="op">=&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_complaining_phase</span>(<span class="ident">rng</span>) {
-                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Complaining</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_complaining_phase</span>(<span class="ident">rng</span>) {
+                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">messages</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
                     <span class="prelude-val">Ok</span>(<span class="ident">messages</span>)
                 }
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
+                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
             },
-            <span class="ident">Phase</span>::<span class="ident">Initialization</span> <span class="op">=&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
+            <span class="ident">Phase</span>::<span class="ident">Initialization</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
             }),
-            <span class="ident">Phase</span>::<span class="ident">Commitment</span> <span class="op">|</span> <span class="ident">Phase</span>::<span class="ident">Justification</span> <span class="op">=&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
+            <span class="ident">Phase</span>::<span class="ident">Commitment</span> <span class="op">|</span> <span class="ident">Phase</span>::<span class="ident">Justification</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Complaining</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
             }),
 
-            <span class="ident">Phase</span>::<span class="ident">Finalization</span> <span class="op">=&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>()),
+            <span class="ident">Phase</span>::<span class="ident">Finalization</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>()),
         }
     }
 
@@ -1794,8 +1798,8 @@
         <span class="ident">sender_index</span>: <span class="ident">u64</span>,
         <span class="ident">target_index</span>: <span class="ident">u64</span>,
         <span class="ident">invalid_msg</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!=</span> <span class="ident">Phase</span>::<span class="ident">Complaining</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Complaining</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase</span>::<span class="ident">Complaining</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
@@ -1817,9 +1821,9 @@
     <span class="kw">fn</span> <span class="ident">finalize_complaining_phase</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">failings</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">complaints_accumulator</span>.<span class="ident">finalize_complaining_phase</span>();
-        <span class="kw">if</span> <span class="ident">failings</span>.<span class="ident">len</span>() <span class="op">&gt;=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="self">self</span>.<span class="ident">threshold</span> {
+        <span class="kw">if</span> <span class="ident">failings</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="self">self</span>.<span class="ident">threshold</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
             <span class="ident">failings</span>.<span class="ident">iter</span>().<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">pk</span><span class="op">|</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">index</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">node_index</span>(<span class="ident">pk</span>) {
@@ -1870,7 +1874,7 @@
             .<span class="ident">iter</span>()
             .<span class="ident">enumerate</span>()
             .<span class="ident">map</span>(<span class="ident">encrypt</span>)
-            .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;&gt;</span>()<span class="question-mark">?</span>;
+            .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span><span class="op">&gt;</span>()<span class="question-mark">?</span>;
 
         <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>().<span class="ident">for_each</span>(<span class="op">|</span>(<span class="ident">idx</span>, <span class="ident">_pk</span>)<span class="op">|</span> {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">ser_row</span>) <span class="op">=</span> <span class="ident">serialize</span>(<span class="kw-2">&amp;</span><span class="ident">our_part</span>.<span class="ident">row</span>(<span class="ident">idx</span> <span class="op">+</span> <span class="number">1</span>)) {
@@ -1894,7 +1898,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">_sender_index</span>: <span class="ident">u64</span>,
         <span class="ident">_keys_map</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, (<span class="ident">Key</span>, <span class="ident">Iv</span>)<span class="op">&gt;</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: Need to decide how the justification and recover procedure take out.</span>
         <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">new</span>())
     }
@@ -1906,17 +1910,17 @@
     }
 
     <span class="doccomment">/// Returns the index of the node, or `None` if it is unknown.</span>
-    <span class="kw">fn</span> <span class="ident">node_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_id</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">node_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_id</span>: <span class="kw-2">&amp;</span><span class="ident">XorName</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">names</span>
             .<span class="ident">iter</span>()
-            .<span class="ident">position</span>(<span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="ident">id</span> <span class="op">==</span> <span class="ident">node_id</span>)
+            .<span class="ident">position</span>(<span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="ident">id</span> <span class="op">=</span><span class="op">=</span> <span class="ident">node_id</span>)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">index</span><span class="op">|</span> <span class="ident">index</span> <span class="kw">as</span> <span class="ident">u64</span>)
     }
 
     <span class="doccomment">/// Returns the id of the index, or `None` if it is unknown.</span>
-    <span class="kw">fn</span> <span class="ident">node_id_from_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_index</span>: <span class="ident">u64</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">node_id_from_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_index</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">name</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
-            <span class="kw">if</span> <span class="ident">i</span> <span class="op">==</span> <span class="ident">node_index</span> <span class="kw">as</span> <span class="ident">usize</span> {
+            <span class="kw">if</span> <span class="ident">i</span> <span class="op">=</span><span class="op">=</span> <span class="ident">node_index</span> <span class="kw">as</span> <span class="ident">usize</span> {
                 <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">name</span>);
             }
         }
@@ -1925,7 +1929,7 @@
 
     <span class="doccomment">/// Returns the number of complete parts. If this is at least `threshold + 1`, the keys can</span>
     <span class="doccomment">/// be generated, but it is possible to wait for more to increase security.</span>
-    <span class="kw">fn</span> <span class="ident">complete_parts_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">complete_parts_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">parts</span>
             .<span class="ident">values</span>()
             .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">part</span><span class="op">|</span> <span class="ident">part</span>.<span class="ident">is_complete</span>(<span class="self">self</span>.<span class="ident">threshold</span>))
@@ -1933,17 +1937,17 @@
     }
 
     <span class="comment">// Returns `true` if all parts are complete to safely generate the new key.</span>
-    <span class="kw">fn</span> <span class="ident">is_ready</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">complete_parts_count</span>() <span class="op">==</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>()
+    <span class="kw">fn</span> <span class="ident">is_ready</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">complete_parts_count</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>()
     }
 
     <span class="doccomment">/// Returns `true` if in the phase of Finalization.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_finalized</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">phase</span> <span class="op">==</span> <span class="ident">Phase</span>::<span class="ident">Finalization</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_finalized</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase</span>::<span class="ident">Finalization</span>
     }
 
     <span class="doccomment">/// Returns the new secret key share and the public key set.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">generate_keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">Outcome</span>)<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">generate_keys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>, <span class="ident">Outcome</span>)<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_finalized</span>() {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
@@ -1952,7 +1956,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sk_val</span> <span class="op">=</span> <span class="ident">Fr</span>::<span class="ident">zero</span>();
         <span class="kw">let</span> <span class="ident">is_complete</span> <span class="op">=</span> <span class="op">|</span><span class="ident">part</span>: <span class="op">&amp;&amp;</span><span class="ident">ProposalState</span><span class="op">|</span> <span class="ident">part</span>.<span class="ident">is_complete</span>(<span class="self">self</span>.<span class="ident">threshold</span>);
         <span class="kw">for</span> <span class="ident">part</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">values</span>().<span class="ident">filter</span>(<span class="ident">is_complete</span>) {
-            <span class="ident">pk_commitment</span> <span class="op">+=</span> <span class="ident">part</span>.<span class="ident">commitment</span>.<span class="ident">row</span>(<span class="number">0</span>);
+            <span class="ident">pk_commitment</span> <span class="op">+</span><span class="op">=</span> <span class="ident">part</span>.<span class="ident">commitment</span>.<span class="ident">row</span>(<span class="number">0</span>);
             <span class="kw">let</span> <span class="ident">row</span> <span class="op">=</span> <span class="ident">Poly</span>::<span class="ident">interpolate</span>(<span class="ident">part</span>.<span class="ident">values</span>.<span class="ident">iter</span>().<span class="ident">take</span>(<span class="self">self</span>.<span class="ident">threshold</span> <span class="op">+</span> <span class="number">1</span>));
             <span class="ident">sk_val</span>.<span class="ident">add_assign</span>(<span class="kw-2">&amp;</span><span class="ident">row</span>.<span class="ident">evaluate</span>(<span class="number">0</span>));
         }
@@ -1963,10 +1967,10 @@
     <span class="doccomment">/// This function shall be called when the DKG procedure not reach Finalization phase and before</span>
     <span class="doccomment">/// discarding the instace. It returns potential invalid peers that causing the blocking, if</span>
     <span class="doccomment">/// any and provable.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">possible_blockers</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">possible_blockers</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">BTreeSet</span>::<span class="ident">new</span>();
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">phase</span> {
-            <span class="ident">Phase</span>::<span class="ident">Initialization</span> <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Initialization</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">for</span> (<span class="ident">index</span>, <span class="ident">name</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
                     <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>
                         .<span class="ident">initalization_accumulator</span>
@@ -1977,12 +1981,12 @@
                     }
                 }
             }
-            <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">=&gt;</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">non_contributors</span>().<span class="number">1</span>,
-            <span class="ident">Phase</span>::<span class="ident">Complaining</span> <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Contribution</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">non_contributors</span>().<span class="number">1</span>,
+            <span class="ident">Phase</span>::<span class="ident">Complaining</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// Non-voters shall already be returned within the error of the</span>
                 <span class="comment">// finalize_complaint_phase function call.</span>
             }
-            <span class="ident">Phase</span>::<span class="ident">Justification</span> <span class="op">|</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span> <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Justification</span> <span class="op">|</span> <span class="ident">Phase</span>::<span class="ident">Commitment</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// As Complaint phase gets completed, it is expected that all nodes are now</span>
                 <span class="comment">// in these two phases. Hence here a strict rule is undertaken that: any missing</span>
                 <span class="comment">// vote will be considered as a potential non-voter.</span>
@@ -1994,7 +1998,7 @@
                     }
                 }
             }
-            <span class="ident">Phase</span>::<span class="ident">Finalization</span> <span class="op">=&gt;</span> {
+            <span class="ident">Phase</span>::<span class="ident">Finalization</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// Not blocking</span>
             }
         }
@@ -2011,15 +2015,15 @@
             <span class="ident">ser_row</span>,
             <span class="ident">enc_rows</span>,
         }: <span class="ident">Part</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Poly</span><span class="op">&gt;</span>, <span class="ident">PartFault</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">enc_rows</span>.<span class="ident">len</span>() <span class="op">!=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Poly</span><span class="op">&gt;</span>, <span class="ident">PartFault</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">enc_rows</span>.<span class="ident">len</span>() <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">PartFault</span>::<span class="ident">RowCount</span>);
         }
-        <span class="kw">if</span> <span class="ident">receiver</span> <span class="op">!=</span> <span class="self">self</span>.<span class="ident">our_index</span> {
+        <span class="kw">if</span> <span class="ident">receiver</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">our_index</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
         }
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">state</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">sender_index</span>) {
-            <span class="kw">if</span> <span class="ident">state</span>.<span class="ident">commitment</span> <span class="op">!=</span> <span class="ident">commitment</span> {
+            <span class="kw">if</span> <span class="ident">state</span>.<span class="ident">commitment</span> <span class="op">!</span><span class="op">=</span> <span class="ident">commitment</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">PartFault</span>::<span class="ident">MultipleParts</span>);
             }
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>); <span class="comment">// We already handled this `Part` before.</span>
@@ -2031,7 +2035,7 @@
             .<span class="ident">insert</span>(<span class="ident">sender_index</span>, <span class="ident">ProposalState</span>::<span class="ident">new</span>(<span class="ident">commitment</span>));
 
         <span class="kw">let</span> <span class="ident">row</span>: <span class="ident">Poly</span> <span class="op">=</span> <span class="ident">deserialize</span>(<span class="kw-2">&amp;</span><span class="ident">ser_row</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">PartFault</span>::<span class="ident">DeserializeRow</span>)<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="ident">row</span>.<span class="ident">commitment</span>() <span class="op">!=</span> <span class="ident">ack_row</span> {
+        <span class="kw">if</span> <span class="ident">row</span>.<span class="ident">commitment</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">ack_row</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">PartFault</span>::<span class="ident">RowAcknowledgment</span>);
         }
         <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">row</span>))
@@ -2042,11 +2046,11 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">sender_index</span>: <span class="ident">u64</span>,
         <span class="ident">Acknowledgment</span>(<span class="ident">proposer_index</span>, <span class="ident">receiver_index</span>, <span class="ident">ser_val</span>, <span class="ident">values</span>): <span class="ident">Acknowledgment</span>,
-    ) <span class="op">-&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AcknowledgmentFault</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">values</span>.<span class="ident">len</span>() <span class="op">!=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AcknowledgmentFault</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">values</span>.<span class="ident">len</span>() <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">AcknowledgmentFault</span>::<span class="ident">ValueCount</span>);
         }
-        <span class="kw">if</span> <span class="ident">receiver_index</span> <span class="op">!=</span> <span class="self">self</span>.<span class="ident">our_index</span> {
+        <span class="kw">if</span> <span class="ident">receiver_index</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">our_index</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
         {
@@ -2059,10 +2063,10 @@
             }
             <span class="kw">let</span> <span class="ident">our_index</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">our_index</span>;
 
-            <span class="kw">let</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">deserialize</span>::<span class="op">&lt;</span><span class="ident">FieldWrap</span><span class="op">&lt;</span><span class="ident">Fr</span><span class="op">&gt;&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">ser_val</span>)
+            <span class="kw">let</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">deserialize</span>::<span class="op">&lt;</span><span class="ident">FieldWrap</span><span class="op">&lt;</span><span class="ident">Fr</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">ser_val</span>)
                 .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">AcknowledgmentFault</span>::<span class="ident">DeserializeValue</span>)<span class="question-mark">?</span>
                 .<span class="ident">into_inner</span>();
-            <span class="kw">if</span> <span class="ident">part</span>.<span class="ident">commitment</span>.<span class="ident">evaluate</span>(<span class="ident">our_index</span> <span class="op">+</span> <span class="number">1</span>, <span class="ident">sender_index</span> <span class="op">+</span> <span class="number">1</span>) <span class="op">!=</span> <span class="ident">G1Affine</span>::<span class="ident">one</span>().<span class="ident">mul</span>(<span class="ident">val</span>)
+            <span class="kw">if</span> <span class="ident">part</span>.<span class="ident">commitment</span>.<span class="ident">evaluate</span>(<span class="ident">our_index</span> <span class="op">+</span> <span class="number">1</span>, <span class="ident">sender_index</span> <span class="op">+</span> <span class="number">1</span>) <span class="op">!</span><span class="op">=</span> <span class="ident">G1Affine</span>::<span class="ident">one</span>().<span class="ident">mul</span>(<span class="ident">val</span>)
             {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">AcknowledgmentFault</span>::<span class="ident">ValueAcknowledgment</span>);
             }
@@ -2082,7 +2086,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">KeyGen</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
         <span class="macro">write</span><span class="macro">!</span>(<span class="ident">formatter</span>, <span class="string">&quot;KeyGen{{{:?}}}&quot;</span>, <span class="self">self</span>.<span class="ident">our_id</span>)
     }
 }
@@ -2090,7 +2094,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">impl</span> <span class="ident">KeyGen</span> {
     <span class="doccomment">/// Returns the name list of the final participants.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">names</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-&gt;</span> <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">names</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">names</span>
     }
 
@@ -2101,8 +2105,8 @@
         <span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
         <span class="ident">threshold</span>: <span class="ident">usize</span>,
         <span class="ident">phase</span>: <span class="ident">Phase</span>,
-    ) <span class="op">-&gt;</span> <span class="ident">KeyGen</span> {
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">&gt;=</span> <span class="ident">threshold</span>);
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KeyGen</span> {
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="ident">threshold</span>);
         <span class="ident">KeyGen</span> {
             <span class="ident">our_id</span>,
             <span class="ident">our_index</span>,
@@ -2120,46 +2124,48 @@
 }
 
 <span class="doccomment">/// `Acknowledgment` faulty entries.</span>
+<span class="attribute">#[<span class="ident">non_exhaustive</span>]</span>
 <span class="attribute">#[<span class="ident">derive</span>(
-    <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">err_derive</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>,
+    <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">thiserror</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>,
 )]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">AcknowledgmentFault</span> {
     <span class="doccomment">/// The number of values differs from the number of nodes.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;The number of values differs from the number of nodes&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The number of values differs from the number of nodes&quot;</span>)]</span>
     <span class="ident">ValueCount</span>,
     <span class="doccomment">/// No corresponding Part received.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;No corresponding Part received&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;No corresponding Part received&quot;</span>)]</span>
     <span class="ident">MissingPart</span>,
     <span class="doccomment">/// Value decryption failed.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Value decryption failed&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Value decryption failed&quot;</span>)]</span>
     <span class="ident">DecryptValue</span>,
     <span class="doccomment">/// Value deserialization failed.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Value deserialization failed&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Value deserialization failed&quot;</span>)]</span>
     <span class="ident">DeserializeValue</span>,
     <span class="doccomment">/// Value doesn&#39;t match the ack.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Value doesn&#39;t match the ack&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Value doesn&#39;t match the ack&quot;</span>)]</span>
     <span class="ident">ValueAcknowledgment</span>,
 }
 
 <span class="doccomment">/// `Part` faulty entries.</span>
+<span class="attribute">#[<span class="ident">non_exhaustive</span>]</span>
 <span class="attribute">#[<span class="ident">derive</span>(
-    <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">err_derive</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>,
+    <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">thiserror</span>::<span class="ident">Error</span>, <span class="ident">PartialEq</span>, <span class="ident">Debug</span>, <span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>,
 )]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PartFault</span> {
     <span class="doccomment">/// The number of rows differs from the number of nodes.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;The number of rows differs from the number of nodes&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;The number of rows differs from the number of nodes&quot;</span>)]</span>
     <span class="ident">RowCount</span>,
     <span class="doccomment">/// Received multiple different Part messages from the same sender.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Received multiple different Part messages from the same sender&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Received multiple different Part messages from the same sender&quot;</span>)]</span>
     <span class="ident">MultipleParts</span>,
     <span class="doccomment">/// Could not decrypt our row in the Part message.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Could not decrypt our row in the Part message&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Could not decrypt our row in the Part message&quot;</span>)]</span>
     <span class="ident">DecryptRow</span>,
     <span class="doccomment">/// Could not deserialize our row in the Part message.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Could not deserialize our row in the Part message&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Could not deserialize our row in the Part message&quot;</span>)]</span>
     <span class="ident">DeserializeRow</span>,
     <span class="doccomment">/// Row does not match the ack.</span>
-    <span class="attribute">#[<span class="ident">error</span>(<span class="ident">display</span> <span class="op">=</span> <span class="string">&quot;Row does not match the ack&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">error</span>(<span class="string">&quot;Row does not match the ack&quot;</span>)]</span>
     <span class="ident">RowAcknowledgment</span>,
 }
 </pre></div>
