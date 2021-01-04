@@ -36,31 +36,32 @@ use threshold_crypto::{
 use xor_name::XorName;
 
 /// A local error while handling a message, that was not caused by that message being invalid.
-#[derive(Clone, Eq, err_derive::Error, PartialEq, Debug)]
+#[non_exhaustive]
+#[derive(Clone, Eq, thiserror::Error, PartialEq, Debug)]
 pub enum Error {
     /// Unknown error.
-    #[error(display = "Unknown")]
+    #[error("Unknown")]
     Unknown,
     /// Unknown sender.
-    #[error(display = "Unknown sender")]
+    #[error("Unknown sender")]
     UnknownSender,
     /// Failed to serialize message.
-    #[error(display = "Serialization error: {}", _0)]
+    #[error("Serialization error: {}", _0)]
     Serialization(String),
     /// Network error from Quic-P2P.
-    #[error(display = "QuicP2P error: {}", _0)]
+    #[error("QuicP2P error: {}", _0)]
     QuicP2P(String),
     /// Failed to encrypt message.
-    #[error(display = "Encryption error")]
+    #[error("Encryption error")]
     Encryption,
     /// Failed to finalize Complaint phase due to too many non-voters.
-    #[error(display = "Too many non-voters error")]
+    #[error("Too many non-voters error")]
     TooManyNonVoters(BTreeSet<u64>),
     /// Unexpected phase.
-    #[error(display = "Unexpected phase")]
+    #[error("Unexpected phase")]
     UnexpectedPhase { expected: Phase, actual: Phase },
     /// Ack on a missed part.
-    #[error(display = "ACK on missed part")]
+    #[error("ACK on missed part")]
     MissingPart,
 }
 
@@ -1037,45 +1038,47 @@ impl KeyGen {
 }
 
 /// `Acknowledgment` faulty entries.
+#[non_exhaustive]
 #[derive(
-    Clone, Copy, Eq, err_derive::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
+    Clone, Copy, Eq, thiserror::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
 )]
 pub enum AcknowledgmentFault {
     /// The number of values differs from the number of nodes.
-    #[error(display = "The number of values differs from the number of nodes")]
+    #[error("The number of values differs from the number of nodes")]
     ValueCount,
     /// No corresponding Part received.
-    #[error(display = "No corresponding Part received")]
+    #[error("No corresponding Part received")]
     MissingPart,
     /// Value decryption failed.
-    #[error(display = "Value decryption failed")]
+    #[error("Value decryption failed")]
     DecryptValue,
     /// Value deserialization failed.
-    #[error(display = "Value deserialization failed")]
+    #[error("Value deserialization failed")]
     DeserializeValue,
     /// Value doesn't match the ack.
-    #[error(display = "Value doesn't match the ack")]
+    #[error("Value doesn't match the ack")]
     ValueAcknowledgment,
 }
 
 /// `Part` faulty entries.
+#[non_exhaustive]
 #[derive(
-    Clone, Copy, Eq, err_derive::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
+    Clone, Copy, Eq, thiserror::Error, PartialEq, Debug, Serialize, Deserialize, PartialOrd, Ord,
 )]
 pub enum PartFault {
     /// The number of rows differs from the number of nodes.
-    #[error(display = "The number of rows differs from the number of nodes")]
+    #[error("The number of rows differs from the number of nodes")]
     RowCount,
     /// Received multiple different Part messages from the same sender.
-    #[error(display = "Received multiple different Part messages from the same sender")]
+    #[error("Received multiple different Part messages from the same sender")]
     MultipleParts,
     /// Could not decrypt our row in the Part message.
-    #[error(display = "Could not decrypt our row in the Part message")]
+    #[error("Could not decrypt our row in the Part message")]
     DecryptRow,
     /// Could not deserialize our row in the Part message.
-    #[error(display = "Could not deserialize our row in the Part message")]
+    #[error("Could not deserialize our row in the Part message")]
     DeserializeRow,
     /// Row does not match the ack.
-    #[error(display = "Row does not match the ack")]
+    #[error("Row does not match the ack")]
     RowAcknowledgment,
 }
