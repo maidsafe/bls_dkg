@@ -19,10 +19,6 @@ extern crate serde_derive;
 extern crate log;
 
 pub mod key_gen;
-pub mod member;
-mod tests;
-
-pub use member::Member;
 
 #[cfg(test)]
 mod dev_utils;
