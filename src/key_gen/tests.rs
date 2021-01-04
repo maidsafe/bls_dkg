@@ -9,6 +9,7 @@
 
 use crate::dev_utils::{create_ids, PeerId};
 use crate::key_gen::{message::Message, Error, KeyGen};
+use anyhow::{format_err, Result};
 use bincode::serialize;
 use itertools::Itertools;
 use rand::{Rng, RngCore};
@@ -22,14 +23,14 @@ const THRESHOLD: usize = 5;
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
     non_responsives: BTreeSet<u64>,
-) -> (Vec<PeerId>, Vec<KeyGen>) {
+) -> Result<(Vec<PeerId>, Vec<KeyGen>)> {
     // Generate individual ids.
     let peer_ids: Vec<PeerId> = create_ids(NODENUM);
 
-    (
+    Ok((
         peer_ids.clone(),
-        create_generators(&mut rng, non_responsives, &peer_ids, THRESHOLD),
-    )
+        create_generators(&mut rng, non_responsives, &peer_ids, THRESHOLD)?,
+    ))
 }
 
 fn create_generators<R: RngCore>(
@@ -37,29 +38,36 @@ fn create_generators<R: RngCore>(
     non_responsives: BTreeSet<u64>,
     peer_ids: &[PeerId],
     threshold: usize,
-) -> Vec<KeyGen> {
+) -> Result<Vec<KeyGen>> {
     // Generate individual key pairs.
     let names: BTreeSet<XorName> = peer_ids.iter().map(|peer_id| peer_id.name()).collect();
 
     // Create the `KeyGen` instances
     let mut generators = Vec::new();
     let mut proposals = Vec::new();
-    peer_ids.iter().for_each(|peer_id| {
+    for peer_id in peer_ids.iter() {
         let key_gen = {
-            let (key_gen, proposal) = KeyGen::initialize(peer_id.name(), threshold, names.clone())
-                .unwrap_or_else(|err| {
-                    panic!("Failed to initialize KeyGen of {:?} {:?}", &peer_id, err)
-                });
+            let (key_gen, proposal) =
+                match KeyGen::initialize(peer_id.name(), threshold, names.clone()) {
+                    Ok(result) => result,
+                    Err(err) => {
+                        return Err(format_err!(
+                            "Failed to initialize KeyGen of {:?} {:?}",
+                            &peer_id,
+                            err
+                        ))
+                    }
+                };
             proposals.push(proposal);
             key_gen
         };
 
         generators.push(key_gen);
-    });
+    }
 
     messaging(&mut rng, &mut generators, &mut proposals, non_responsives);
 
-    generators
+    Ok(generators)
 }
 
 fn messaging<R: RngCore>(
@@ -87,24 +95,25 @@ fn messaging<R: RngCore>(
 }
 
 #[test]
-fn all_nodes_being_responsive() {
+fn all_nodes_being_responsive() -> Result<()> {
     let mut rng = rand::thread_rng();
-    let (_, mut generators) = setup_generators(&mut rng, BTreeSet::new());
+    let (_, mut generators) = setup_generators(&mut rng, BTreeSet::new())?;
     // With all participants responding properly, the key generating procedure shall be completed
     // automatically. As when there is no complaint, Justification phase will be triggered directly.
     assert!(generators
         .iter_mut()
         .all(|key_gen| key_gen.generate_keys().is_some()));
+    Ok(())
 }
 
 #[test]
-fn having_max_unresponsive_nodes_still_work() {
+fn having_max_unresponsive_nodes_still_work() -> Result<()> {
     let mut rng = rand::thread_rng();
     let mut non_responsives = BTreeSet::<u64>::new();
     for i in 0..(NODENUM - THRESHOLD - 1) as u64 {
         let _ = non_responsives.insert(i);
     }
-    let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone());
+    let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone())?;
 
     let mut proposals = Vec::new();
     // With one non_responsive node, Proposal phase cannot be completed automatically. This
@@ -144,16 +153,17 @@ fn having_max_unresponsive_nodes_still_work() {
                 assert!(key_gen.generate_keys().is_none());
             }
         });
+    Ok(())
 }
 
 #[test]
-fn having_min_unresponsive_nodes_cause_block() {
+fn having_min_unresponsive_nodes_cause_block() -> Result<()> {
     let mut rng = rand::thread_rng();
     let mut non_responsives = BTreeSet::<u64>::new();
     for i in 0..(NODENUM - THRESHOLD) as u64 {
         let _ = non_responsives.insert(i);
     }
-    let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone());
+    let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone())?;
 
     // The `messaging` function only ignores the non-initial proposals from a non-responsive node.
     // i.e. the Initialization phase will be completed and transits into Proposal.
@@ -181,24 +191,25 @@ fn having_min_unresponsive_nodes_cause_block() {
     );
 
     // Then trigger `finalize_complaining_phase`, phase shall be blocked due to too many non-voters.
-    peer_ids.iter().enumerate().for_each(|(index, peer_id)| {
+    for (index, peer_id) in peer_ids.iter().enumerate() {
         if let Err(err) = generators[index].timed_phase_transition(&mut rng) {
             assert_eq!(err, Error::TooManyNonVoters(non_responsives.clone()));
         } else {
-            panic!("Node {:?} shall not progress anymore", peer_id);
+            return Err(format_err!("Node {:?} shall not progress anymore", peer_id));
         }
-    });
+    }
     // List already returned within the above call to `finalize_complaining_phase`. So here it
     // returns an empty list.
     generators
         .iter()
         .for_each(|generator| assert!(generator.possible_blockers().is_empty()));
+    Ok(())
 }
 
 #[test]
-fn threshold_signature() {
+fn threshold_signature() -> Result<()> {
     let mut rng = rand::thread_rng();
-    let (_, generators) = setup_generators(&mut rng, BTreeSet::new());
+    let (_, generators) = setup_generators(&mut rng, BTreeSet::new())?;
 
     // Compute the keys and threshold signature shares.
     let msg = "Hello from the group!";
@@ -209,28 +220,24 @@ fn threshold_signature() {
         .1
         .public_key_set;
 
-    let sig_shares: BTreeMap<_, _> = generators
-        .iter()
-        .enumerate()
-        .map(|(idx, generator)| {
-            assert!(generator.is_ready());
-            let outcome = generator
-                .generate_keys()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
-                        idx
-                    )
-                })
-                .1;
-            let sk = outcome.secret_key_share;
-            let pks = outcome.public_key_set;
-            assert_eq!(pks, pub_key_set);
-            let sig = sk.sign(msg);
-            assert!(pks.public_key_share(idx).verify(&sig, msg));
-            (idx, sig)
-        })
-        .collect();
+    let mut sig_shares = BTreeMap::new();
+    for (idx, generator) in generators.iter().enumerate() {
+        assert!(generator.is_ready());
+        let outcome = if let Some(outcome) = generator.generate_keys() {
+            outcome.1
+        } else {
+            return Err(format_err!(
+                "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
+                idx
+            ));
+        };
+        let sk = outcome.secret_key_share;
+        let pks = outcome.public_key_set;
+        assert_eq!(pks, pub_key_set);
+        let sig = sk.sign(msg);
+        assert!(pks.public_key_share(idx).verify(&sig, msg));
+        let _ = sig_shares.insert(idx, sig);
+    }
 
     // Test threshold signature verification for a combination of signatures
     let sig_combinations = sig_shares.iter().combinations(THRESHOLD + 1);
@@ -240,7 +247,9 @@ fn threshold_signature() {
     for combination in deficient_sig_combinations.clone() {
         match pub_key_set.combine_signatures(combination) {
             Ok(_) => {
-                panic!("Unexpected Success: Signatures cannot be aggregated with THRESHOLD shares")
+                return Err(format_err!(
+                    "Unexpected Success: Signatures cannot be aggregated with THRESHOLD shares"
+                ));
             }
             Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
         }
@@ -258,21 +267,28 @@ fn threshold_signature() {
         let sig = pub_key_set
             .combine_signatures(signature_shares[0].clone())
             .expect("signature shares match");
-        let sig_ser =
-            serialize(&sig).unwrap_or_else(|_err| b"cannot serialize signature 1".to_vec());
+        let sig_ser = if let Ok(sig_ser) = serialize(&sig) {
+            sig_ser
+        } else {
+            return Err(format_err!("cannot serialize signature 1"));
+        };
         let sig2 = pub_key_set
             .combine_signatures(signature_shares[1].clone())
             .expect("signature shares match");
-        let sig2_ser =
-            serialize(&sig2).unwrap_or_else(|_err| b"cannot serialize signature 2".to_vec());
+        let sig2_ser = if let Ok(sig_ser) = serialize(&sig2) {
+            sig_ser
+        } else {
+            return Err(format_err!("cannot serialize signature 2"));
+        };
         assert_eq!(sig_ser, sig2_ser);
     }
+    Ok(())
 }
 
 #[test]
-fn threshold_encrypt() {
+fn threshold_encrypt() -> Result<()> {
     let mut rng = rand::thread_rng();
-    let (_, generators) = setup_generators(&mut rng, BTreeSet::new());
+    let (_, generators) = setup_generators(&mut rng, BTreeSet::new())?;
 
     // Compute the keys and decryption shares.
     let msg = "Help for threshold encryption unit test!".as_bytes();
@@ -284,36 +300,41 @@ fn threshold_encrypt() {
         .public_key_set;
     let ciphertext = pub_key_set.public_key().encrypt(msg);
 
-    let dec_shares: BTreeMap<_, _> = generators
-        .iter()
-        .enumerate()
-        .map(|(idx, generator)| {
-            assert!(generator.is_ready());
-            let outcome = generator
-                .generate_keys()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
-                        idx
-                    )
-                })
-                .1;
-            let sk = outcome.secret_key_share;
-            let pks = outcome.public_key_set;
-            assert_eq!(pks, pub_key_set);
-            let dec_share = sk.decrypt_share(&ciphertext).unwrap();
-            assert!(pks
-                .public_key_share(idx)
-                .verify_decryption_share(&dec_share, &ciphertext));
+    let mut dec_shares = BTreeMap::new();
 
-            (idx, dec_share)
-        })
-        .collect();
+    for (idx, generator) in generators.iter().enumerate() {
+        assert!(generator.is_ready());
+        let outcome = if let Some(outcome) = generator.generate_keys() {
+            outcome.1
+        } else {
+            return Err(format_err!(
+                "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
+                idx
+            ));
+        };
+        let sk = outcome.secret_key_share;
+        let pks = outcome.public_key_set;
+        assert_eq!(pks, pub_key_set);
+        let dec_share = if let Some(dec_share) = sk.decrypt_share(&ciphertext) {
+            dec_share
+        } else {
+            return Err(format_err!("Cannot create a decrypt share."));
+        };
+        assert!(pks
+            .public_key_share(idx)
+            .verify_decryption_share(&dec_share, &ciphertext));
+
+        let _ = dec_shares.insert(idx, dec_share);
+    }
     // Test threshold encryption verification for a combination of shares - should pass as there
     // are THRESHOLD + 1 shares aggregated in each combination
     let dec_share_combinations = dec_shares.iter().combinations(THRESHOLD + 1);
     for dec_share in dec_share_combinations {
-        let decrypted = pub_key_set.decrypt(dec_share, &ciphertext).unwrap();
+        let decrypted = if let Ok(decrypted) = pub_key_set.decrypt(dec_share, &ciphertext) {
+            decrypted
+        } else {
+            return Err(format_err!("Cannot verify a decrypt share."));
+        };
         assert_eq!(msg, decrypted.as_slice());
     }
 
@@ -322,14 +343,19 @@ fn threshold_encrypt() {
     let deficient_dec_share_combinations = dec_shares.iter().combinations(THRESHOLD);
     for deficient_dec_share in deficient_dec_share_combinations {
         match pub_key_set.decrypt(deficient_dec_share, &ciphertext) {
-            Ok(_) => panic!("Unexpected Success: Cannot decrypt by aggregating THRESHOLD shares"),
+            Ok(_) => {
+                return Err(format_err!(
+                    "Unexpected Success: Cannot decrypt by aggregating THRESHOLD shares"
+                ))
+            }
             Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
         }
     }
+    Ok(())
 }
 
 #[test]
-fn network_churning() {
+fn network_churning() -> Result<()> {
     let mut rng = rand::thread_rng();
 
     let initial_num = 3;
@@ -346,10 +372,11 @@ fn network_churning() {
         }
 
         let threshold: usize = peer_ids.len() * 2 / 3;
-        let mut generators = create_generators(&mut rng, BTreeSet::new(), &peer_ids, threshold);
+        let mut generators = create_generators(&mut rng, BTreeSet::new(), &peer_ids, threshold)?;
 
         assert!(generators
             .iter_mut()
             .all(|key_gen| key_gen.generate_keys().is_some()));
     }
+    Ok(())
 }
