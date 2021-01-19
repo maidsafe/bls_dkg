@@ -110,49 +110,57 @@ fn all_nodes_being_responsive() -> Result<()> {
 fn having_max_unresponsive_nodes_still_work() -> Result<()> {
     let mut rng = rand::thread_rng();
     let mut non_responsives = BTreeSet::<u64>::new();
-    for i in 0..(NODENUM - THRESHOLD - 1) as u64 {
+    for i in 0..NODENUM as u64 {
         let _ = non_responsives.insert(i);
     }
-    let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone())?;
+    println!("SET: {:?}", non_responsives);
+    let combinations_of_non_resp = non_responsives
+        .into_iter()
+        .combinations(NODENUM - THRESHOLD - 1);
+    for non_responsive in combinations_of_non_resp {
+        let non_responsive: BTreeSet<u64> = non_responsive.iter().cloned().collect();
+        println!("Combo of non_resp {:?}", non_responsive);
+        let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsive.clone())?;
 
-    let mut proposals = Vec::new();
-    // With one non_responsive node, Proposal phase cannot be completed automatically. This
-    // requires finalize_contributing_phase to be called externally to complete the procedure.
-    // All participants will transit into Complaint phase afterwards, Then requires
-    // finalize_complaining_phase to be called externally to complete the procedure.
-    for _ in 0..2 {
-        peer_ids.iter().enumerate().for_each(|(index, _peer_id)| {
-            if let Ok(proposal_vec) = generators[index].timed_phase_transition(&mut rng) {
-                if !non_responsives.contains(&(index as u64)) {
-                    for proposal in proposal_vec {
-                        proposals.push(proposal);
+        let mut proposals = Vec::new();
+        // With one non_responsive node, Proposal phase cannot be completed automatically. This
+        // requires finalize_contributing_phase to be called externally to complete the procedure.
+        // All participants will transit into Complaint phase afterwards, Then requires
+        // finalize_complaining_phase to be called externally to complete the procedure.
+        for _ in 0..2 {
+            peer_ids.iter().enumerate().for_each(|(index, _peer_id)| {
+                if let Ok(proposal_vec) = generators[index].timed_phase_transition(&mut rng) {
+                    if !non_responsive.contains(&(index as u64)) {
+                        for proposal in proposal_vec {
+                            proposals.push(proposal);
+                        }
                     }
                 }
-            }
-        });
-        // Continue the procedure with messaging.
-        messaging(
-            &mut rng,
-            &mut generators,
-            &mut proposals,
-            non_responsives.clone(),
-        );
-        assert!(proposals.is_empty());
-    }
+            });
+            // Continue the procedure with messaging.
+            messaging(
+                &mut rng,
+                &mut generators,
+                &mut proposals,
+                non_responsive.clone(),
+            );
+            assert!(proposals.is_empty());
+        }
 
-    generators
-        .iter_mut()
-        .enumerate()
-        .for_each(|(index, key_gen)| {
-            if !non_responsives.contains(&(index as u64)) {
-                assert!(key_gen.generate_keys().is_some());
-                non_responsives.iter().for_each(|idx| {
-                    assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
-                });
-            } else {
-                assert!(key_gen.generate_keys().is_none());
-            }
-        });
+        generators
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, key_gen)| {
+                if !non_responsive.contains(&(index as u64)) {
+                    assert!(key_gen.generate_keys().is_some());
+                    non_responsive.iter().for_each(|idx| {
+                        assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
+                    });
+                } else {
+                    assert!(key_gen.generate_keys().is_none());
+                }
+            });
+    }
     Ok(())
 }
 
