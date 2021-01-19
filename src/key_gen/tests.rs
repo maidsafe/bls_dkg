@@ -14,6 +14,7 @@ use bincode::serialize;
 use itertools::Itertools;
 use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
+use threshold_crypto::{PublicKeySet, SignatureShare};
 use xor_name::XorName;
 
 // Alter the configure of the number of nodes and the threshold.
@@ -109,17 +110,17 @@ fn all_nodes_being_responsive() -> Result<()> {
 #[test]
 fn having_max_unresponsive_nodes_still_work() -> Result<()> {
     let mut rng = rand::thread_rng();
-    let mut non_responsives = BTreeSet::<u64>::new();
+    let mut all_nodes = BTreeSet::<u64>::new();
     for i in 0..NODENUM as u64 {
-        let _ = non_responsives.insert(i);
+        let _ = all_nodes.insert(i);
     }
-    println!("SET: {:?}", non_responsives);
-    let combinations_of_non_resp = non_responsives
-        .into_iter()
+    let combinations_of_non_resp = all_nodes
+        .iter()
+        .cloned()
         .combinations(NODENUM - THRESHOLD - 1);
+
     for non_responsive in combinations_of_non_resp {
         let non_responsive: BTreeSet<u64> = non_responsive.iter().cloned().collect();
-        println!("Combo of non_resp {:?}", non_responsive);
         let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsive.clone())?;
 
         let mut proposals = Vec::new();
@@ -147,19 +148,49 @@ fn having_max_unresponsive_nodes_still_work() -> Result<()> {
             assert!(proposals.is_empty());
         }
 
-        generators
-            .iter_mut()
-            .enumerate()
-            .for_each(|(index, key_gen)| {
-                if !non_responsive.contains(&(index as u64)) {
-                    assert!(key_gen.generate_keys().is_some());
-                    non_responsive.iter().for_each(|idx| {
-                        assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
-                    });
+        let responsive = all_nodes.difference(&non_responsive).cloned().collect_vec();
+
+        let pub_key_set: PublicKeySet = generators[responsive.as_slice()[0] as usize]
+            .generate_keys()
+            .expect("Failed to generate `PublicKeySet` for node #0")
+            .1
+            .public_key_set;
+
+        let msg = "Test message!";
+        let mut sig_shares: BTreeMap<usize, SignatureShare> = BTreeMap::new();
+
+        for (index, key_gen) in generators.iter_mut().enumerate() {
+            if !non_responsive.contains(&(index as u64)) {
+                let outcome = if let Some(outcome) = key_gen.generate_keys() {
+                    outcome.1
                 } else {
-                    assert!(key_gen.generate_keys().is_none());
-                }
-            });
+                    return Err(format_err!(
+                        "Failed to generate `PublicKeySet` and `SecretKeyShare` for node #{}",
+                        index
+                    ));
+                };
+                let sk = outcome.secret_key_share;
+                let index = key_gen.our_index as usize;
+                let pks = outcome.public_key_set;
+                assert_eq!(pks, pub_key_set);
+                let sig = sk.sign(msg);
+                assert!(pks.public_key_share(index).verify(&sig, msg));
+                let _ = sig_shares.insert(index, sig);
+
+                non_responsive.iter().for_each(|idx| {
+                    assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
+                });
+            } else {
+                assert!(key_gen.generate_keys().is_none());
+            };
+        }
+
+        let sig = match pub_key_set.combine_signatures(sig_shares.iter()) {
+            Ok(sig) => sig,
+            Err(e) => return Err(format_err!("Unexpected Error {:?}: Not able to generate Signature with THRESHOLD + 1 sig_shares", e)),
+        };
+
+        assert!(pub_key_set.public_key().verify(&sig, msg));
     }
     Ok(())
 }
