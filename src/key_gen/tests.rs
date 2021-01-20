@@ -110,18 +110,15 @@ fn all_nodes_being_responsive() -> Result<()> {
 #[test]
 fn having_max_unresponsive_nodes_still_work() -> Result<()> {
     let mut rng = rand::thread_rng();
-    let mut all_nodes = BTreeSet::<u64>::new();
-    for i in 0..NODENUM as u64 {
-        let _ = all_nodes.insert(i);
-    }
+    let all_nodes: BTreeSet<_> = (0u64..NODENUM as u64).collect();
     let combinations_of_non_resp = all_nodes
         .iter()
         .cloned()
         .combinations(NODENUM - THRESHOLD - 1);
 
     for non_responsive in combinations_of_non_resp {
-        let non_responsive: BTreeSet<u64> = non_responsive.iter().cloned().collect();
-        let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsive.clone())?;
+        let non_responsives: BTreeSet<u64> = non_responsive.iter().cloned().collect();
+        let (peer_ids, mut generators) = setup_generators(&mut rng, non_responsives.clone())?;
 
         let mut proposals = Vec::new();
         // With one non_responsive node, Proposal phase cannot be completed automatically. This
@@ -131,7 +128,7 @@ fn having_max_unresponsive_nodes_still_work() -> Result<()> {
         for _ in 0..2 {
             peer_ids.iter().enumerate().for_each(|(index, _peer_id)| {
                 if let Ok(proposal_vec) = generators[index].timed_phase_transition(&mut rng) {
-                    if !non_responsive.contains(&(index as u64)) {
+                    if !non_responsives.contains(&(index as u64)) {
                         for proposal in proposal_vec {
                             proposals.push(proposal);
                         }
@@ -143,14 +140,17 @@ fn having_max_unresponsive_nodes_still_work() -> Result<()> {
                 &mut rng,
                 &mut generators,
                 &mut proposals,
-                non_responsive.clone(),
+                non_responsives.clone(),
             );
             assert!(proposals.is_empty());
         }
 
-        let responsive = all_nodes.difference(&non_responsive).cloned().collect_vec();
+        let responsive = all_nodes
+            .difference(&non_responsives)
+            .cloned()
+            .collect_vec();
 
-        let pub_key_set: PublicKeySet = generators[responsive.as_slice()[0] as usize]
+        let pub_key_set: PublicKeySet = generators[responsive[0] as usize]
             .generate_keys()
             .expect("Failed to generate `PublicKeySet` for node #0")
             .1
@@ -160,7 +160,7 @@ fn having_max_unresponsive_nodes_still_work() -> Result<()> {
         let mut sig_shares: BTreeMap<usize, SignatureShare> = BTreeMap::new();
 
         for (index, key_gen) in generators.iter_mut().enumerate() {
-            if !non_responsive.contains(&(index as u64)) {
+            if !non_responsives.contains(&(index as u64)) {
                 let outcome = if let Some(outcome) = key_gen.generate_keys() {
                     outcome.1
                 } else {
@@ -177,7 +177,7 @@ fn having_max_unresponsive_nodes_still_work() -> Result<()> {
                 assert!(pks.public_key_share(index).verify(&sig, msg));
                 let _ = sig_shares.insert(index, sig);
 
-                non_responsive.iter().for_each(|idx| {
+                non_responsives.iter().for_each(|idx| {
                     assert!(!key_gen.names().contains(&peer_ids[*idx as usize].name()))
                 });
             } else {
