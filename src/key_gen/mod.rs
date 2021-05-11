@@ -390,7 +390,7 @@ impl KeyGen {
     }
 
     fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
-        let pending_messages = std::mem::replace(&mut self.pending_messages, Vec::new());
+        let pending_messages = std::mem::take(&mut self.pending_messages);
         let mut msgs = Vec::new();
         for message in pending_messages {
             if let Ok(new_messages) = self.process_message(rng, message.clone()) {

@@ -15,8 +15,8 @@ use std::fmt;
 use xor_name::XorName;
 
 /// Messages used for running BLS DKG.
-#[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(bound = "")]
 pub enum Message {
     Initialization {
         key_gen_id: u64,
