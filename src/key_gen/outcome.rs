@@ -8,7 +8,8 @@
 // Software.
 
 use std::fmt::{self, Debug, Formatter};
-use threshold_crypto::{PublicKeySet, SecretKeyShare};
+
+use crate::{PublicKeySet, SecretKeyShare};
 
 #[derive(Clone)]
 /// DKG result

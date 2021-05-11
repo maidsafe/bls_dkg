@@ -31,8 +31,9 @@ use threshold_crypto::{
     group::CurveAffine,
     poly::{BivarCommitment, BivarPoly, Poly},
     serde_impl::FieldWrap,
-    Fr, G1Affine, SecretKeyShare,
+    Fr, G1Affine,
 };
+pub use threshold_crypto::{PublicKeySet, SecretKeyShare};
 use xor_name::XorName;
 
 /// A local error while handling a message, that was not caused by that message being invalid.
