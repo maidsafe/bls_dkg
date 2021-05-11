@@ -206,15 +206,14 @@ impl InitializationAccumulator {
         }
 
         let paras = (m, n, member_list);
-        if let Some(value) = self.initializations.get_mut(&paras) {
-            *value += 1;
-            if *value >= m {
-                return Some(paras);
-            }
+        let value = self.initializations.entry(paras.clone()).or_insert(0);
+        *value += 1;
+
+        if *value >= m {
+            Some(paras)
         } else {
-            let _ = self.initializations.insert(paras, 1);
+            None
         }
-        None
     }
 }
 
