@@ -19,6 +19,7 @@ extern crate serde_derive;
 extern crate log;
 
 pub mod key_gen;
+pub use key_gen::*;
 
 #[cfg(test)]
 mod dev_utils;

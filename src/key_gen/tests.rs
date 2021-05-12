@@ -80,7 +80,7 @@ fn messaging<R: RngCore>(
     // Keep broadcasting the proposals among the generators till no more.
     // The proposal from non_responsive nodes shall be ignored.
     while !proposals.is_empty() {
-        let proposals_local = std::mem::replace(proposals, Vec::new());
+        let proposals_local = std::mem::take(proposals);
         for proposal in &proposals_local {
             for (index, generator) in generators.iter_mut().enumerate() {
                 if let Ok(proposal_vec) = generator.handle_message(&mut rng, proposal.clone()) {

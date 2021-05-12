@@ -31,8 +31,9 @@ use threshold_crypto::{
     group::CurveAffine,
     poly::{BivarCommitment, BivarPoly, Poly},
     serde_impl::FieldWrap,
-    Fr, G1Affine, SecretKeyShare,
+    Fr, G1Affine,
 };
+pub use threshold_crypto::{PublicKeySet, SecretKeyShare};
 use xor_name::XorName;
 
 /// A local error while handling a message, that was not caused by that message being invalid.
@@ -205,15 +206,14 @@ impl InitializationAccumulator {
         }
 
         let paras = (m, n, member_list);
-        if let Some(value) = self.initializations.get_mut(&paras) {
-            *value += 1;
-            if *value >= m {
-                return Some(paras);
-            }
+        let value = self.initializations.entry(paras.clone()).or_insert(0);
+        *value += 1;
+
+        if *value >= m {
+            Some(paras)
         } else {
-            let _ = self.initializations.insert(paras, 1);
+            None
         }
-        None
     }
 }
 
@@ -390,7 +390,7 @@ impl KeyGen {
     }
 
     fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
-        let pending_messages = std::mem::replace(&mut self.pending_messages, Vec::new());
+        let pending_messages = std::mem::take(&mut self.pending_messages);
         let mut msgs = Vec::new();
         for message in pending_messages {
             if let Ok(new_messages) = self.process_message(rng, message.clone()) {
