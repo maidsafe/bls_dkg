@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.8](https://github.com/maidsafe/bls_dkg/compare/v0.3.7...v0.3.8) (2021-05-12)
+
+
+### Bug Fixes
+
+* **key_gen:** if m is set to 0 or 1, we did not detect a threshold ([906ca05](https://github.com/maidsafe/bls_dkg/commit/906ca051584a4c7d1f3f3e9a416dde769748f9e1))
+
 ### [0.3.7](https://github.com/maidsafe/bls_dkg/compare/v0.3.6...v0.3.7) (2021-03-03)
 
 ### [0.3.6](https://github.com/maidsafe/bls_dkg/compare/v0.3.5...v0.3.6) (2021-02-25)
