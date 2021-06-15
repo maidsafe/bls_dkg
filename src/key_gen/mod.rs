@@ -284,17 +284,19 @@ impl ComplaintsAccumulator {
 /// An algorithm for dealerless distributed key generation.
 ///
 /// This is trying to follow the protocol as suggested at
-/// https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol
+/// <https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol>
 ///
 /// A normal usage flow will be:
-///   a, call `initialize` first to generate an instance.
-///   b, multicasting the return `Message` to all participants.
-///   c, call `handle_message` function to handle the incoming `Message` and multicasting the
-///      resulted `Message` (if has) to all participants.
-///   d, call `finalize_complaining_phase` to complete the complaining phase. (This separate call may need to
-///      depend on a separate timer & checker against the key generator's current status)
-///   e, repeat step c when there is incoming `Message`.
-///   f, call `generate_keys` to get the public-key set and secret-key share, if the procedure finalized.
+///
+/// 1. Call [`initialize`](Self::initialize) first to generate an instance.
+/// 2. Multicasting the return [`Message`] to all participants.
+/// 3. Call [`handle_message`](Self::handle_message) function to handle the incoming `Message` and
+///    multicasting the resulting `Message`s (if any) to all participants.
+/// 4. Call [`timed_phase_transition`](Self::timed_phase_transition) to complete the complaining
+///    phase.
+/// 5. Repeat step 3 when there is incoming `Message`.
+/// 6. Call [`generate_keys`](Self::generate_keys) to get the public-key set and secret-key share,
+///    if the procedure finalized.
 pub struct KeyGen {
     /// Our node ID.
     our_id: XorName,
