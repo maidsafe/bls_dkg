@@ -28,8 +28,8 @@ pub struct Key(pub [u8; KEY_SIZE]);
 pub struct Iv(pub [u8; IV_SIZE]);
 
 fn encrypt(data: &[u8], key: &Key, iv: &Iv) -> Result<Vec<u8>, Error> {
-    let cipher =
-        Aes128Cbc::new_from_slices(key.0.as_ref(), iv.0.as_ref()).map_err(|_e| Error::Encryption)?;
+    let cipher = Aes128Cbc::new_from_slices(key.0.as_ref(), iv.0.as_ref())
+        .map_err(|_e| Error::Encryption)?;
     Ok(cipher.encrypt_vec(data))
 }
 
