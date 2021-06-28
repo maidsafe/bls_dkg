@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.12](https://github.com/maidsafe/bls_dkg/compare/v0.3.11...v0.3.12) (2021-06-28)
+
+
+### Bug Fixes
+
+* maidsafe version of threshold_crypto ([ee7b3f6](https://github.com/maidsafe/bls_dkg/commit/ee7b3f60458d3233bdf6fb421db938c59020f69f))
+* temporary fix for the failure crate deprecation warning ([1f54a21](https://github.com/maidsafe/bls_dkg/commit/1f54a21f1471f153e10318a26d425a05c2eb31c1))
+* use blsttc instead of threshold_crypto ([77525c1](https://github.com/maidsafe/bls_dkg/commit/77525c1b7ef636a32d0ecb50e5ade61541e6828e))
+
 ### [0.3.11](https://github.com/maidsafe/bls_dkg/compare/v0.3.10...v0.3.11) (2021-06-28)
 
 
