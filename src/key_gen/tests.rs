@@ -11,10 +11,10 @@ use crate::dev_utils::{create_ids, PeerId};
 use crate::key_gen::{message::Message, Error, KeyGen};
 use anyhow::{format_err, Result};
 use bincode::serialize;
+use blsttc::{PublicKeySet, SignatureShare};
 use itertools::Itertools;
 use rand::{Rng, RngCore};
 use std::collections::{BTreeMap, BTreeSet};
-use threshold_crypto::{PublicKeySet, SignatureShare};
 use xor_name::XorName;
 
 // Alter the configure of the number of nodes and the threshold.
