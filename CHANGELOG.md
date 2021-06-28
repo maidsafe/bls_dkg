@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.3.11](https://github.com/maidsafe/bls_dkg/compare/v0.3.10...v0.3.11) (2021-06-28)
+
+
+### Bug Fixes
+
+* tilde reqs ([8f8e3c1](https://github.com/maidsafe/bls_dkg/commit/8f8e3c1dc4d2b1f808ad9faa615e9bde82ce6040))
+* upgrade to the latest version of aes crate to remove deprecation warnings ([5b44883](https://github.com/maidsafe/bls_dkg/commit/5b44883c68c89c49ca5cadebc7272151cf06fb5d))
+
 ### [0.3.10](https://github.com/maidsafe/bls_dkg/compare/v0.3.9...v0.3.10) (2021-06-14)
 
 ### [0.3.9](https://github.com/maidsafe/bls_dkg/compare/v0.3.8...v0.3.9) (2021-05-31)
