@@ -16,6 +16,14 @@ mod rng_adapter;
 mod tests;
 
 use bincode::{self, deserialize, serialize};
+use blsttc::{
+    ff::Field,
+    group::CurveAffine,
+    poly::{BivarCommitment, BivarPoly, Poly},
+    serde_impl::FieldWrap,
+    Fr, G1Affine,
+};
+pub use blsttc::{PublicKeySet, SecretKeyShare};
 use encryptor::{Encryptor, Iv, Key};
 use message::Message;
 use outcome::Outcome;
@@ -26,14 +34,6 @@ use std::{
     fmt::{self, Debug, Formatter},
     mem,
 };
-use threshold_crypto::{
-    ff::Field,
-    group::CurveAffine,
-    poly::{BivarCommitment, BivarPoly, Poly},
-    serde_impl::FieldWrap,
-    Fr, G1Affine,
-};
-pub use threshold_crypto::{PublicKeySet, SecretKeyShare};
 use xor_name::XorName;
 
 /// A local error while handling a message, that was not caused by that message being invalid.
