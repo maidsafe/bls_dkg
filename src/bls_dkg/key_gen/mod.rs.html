@@ -1102,6 +1102,14 @@
 <span class="kw">mod</span> <span class="ident">tests</span>;
 
 <span class="kw">use</span> <span class="ident">bincode</span>::{<span class="self">self</span>, <span class="ident">deserialize</span>, <span class="ident">serialize</span>};
+<span class="kw">use</span> <span class="ident">blsttc</span>::{
+    <span class="ident">ff::Field</span>,
+    <span class="ident">group::CurveAffine</span>,
+    <span class="ident">poly</span>::{<span class="ident">BivarCommitment</span>, <span class="ident">BivarPoly</span>, <span class="ident">Poly</span>},
+    <span class="ident">serde_impl::FieldWrap</span>,
+    <span class="ident">Fr</span>, <span class="ident">G1Affine</span>,
+};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">blsttc</span>::{<span class="ident">PublicKeySet</span>, <span class="ident">SecretKeyShare</span>};
 <span class="kw">use</span> <span class="ident">encryptor</span>::{<span class="ident">Encryptor</span>, <span class="ident">Iv</span>, <span class="ident">Key</span>};
 <span class="kw">use</span> <span class="ident">message::Message</span>;
 <span class="kw">use</span> <span class="ident">outcome::Outcome</span>;
@@ -1112,14 +1120,6 @@
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">mem</span>,
 };
-<span class="kw">use</span> <span class="ident">threshold_crypto</span>::{
-    <span class="ident">ff::Field</span>,
-    <span class="ident">group::CurveAffine</span>,
-    <span class="ident">poly</span>::{<span class="ident">BivarCommitment</span>, <span class="ident">BivarPoly</span>, <span class="ident">Poly</span>},
-    <span class="ident">serde_impl::FieldWrap</span>,
-    <span class="ident">Fr</span>, <span class="ident">G1Affine</span>,
-};
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">threshold_crypto</span>::{<span class="ident">PublicKeySet</span>, <span class="ident">SecretKeyShare</span>};
 <span class="kw">use</span> <span class="ident">xor_name::XorName</span>;
 
 <span class="doccomment">/// A local error while handling a message, that was not caused by that message being invalid.</span>
