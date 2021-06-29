@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.4.0](https://github.com/maidsafe/bls_dkg/compare/v0.3.12...v0.4.0) (2021-06-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* updates to use blsstc
+
+### Features
+
+* introducing blsstc ([8745c19](https://github.com/maidsafe/bls_dkg/commit/8745c193cf2cc12354f5323871dd63d37b6fe928))
+
 ### [0.3.12](https://github.com/maidsafe/bls_dkg/compare/v0.3.11...v0.3.12) (2021-06-28)
 
 
