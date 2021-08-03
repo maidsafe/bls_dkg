@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.5.1](https://github.com/maidsafe/bls_dkg/compare/v0.5.0...v0.5.1) (2021-08-03)
+
+
+### Bug Fixes
+
+* Demote `anyhow` and `itertools` to dev-dependencies ([08d0df1](https://github.com/maidsafe/bls_dkg/commit/08d0df118dc90c4f4d60fc8864adc714367e33e6))
+
 ## [0.5.0](https://github.com/maidsafe/bls_dkg/compare/v0.4.0...v0.5.0) (2021-06-30)
 
 
