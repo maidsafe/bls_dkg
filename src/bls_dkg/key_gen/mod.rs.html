@@ -1082,6 +1082,8 @@
 <span id="1082">1082</span>
 <span id="1083">1083</span>
 <span id="1084">1084</span>
+<span id="1085">1085</span>
+<span id="1086">1086</span>
 </pre><pre class="rust">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -1369,17 +1371,19 @@
 <span class="doccomment">/// An algorithm for dealerless distributed key generation.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// This is trying to follow the protocol as suggested at</span>
-<span class="doccomment">/// https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol</span>
+<span class="doccomment">/// &lt;https://github.com/dashpay/dips/blob/master/dip-0006/bls_m-of-n_threshold_scheme_and_dkg.md#distributed-key-generation-dkg-protocol&gt;</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// A normal usage flow will be:</span>
-<span class="doccomment">///   a, call `initialize` first to generate an instance.</span>
-<span class="doccomment">///   b, multicasting the return `Message` to all participants.</span>
-<span class="doccomment">///   c, call `handle_message` function to handle the incoming `Message` and multicasting the</span>
-<span class="doccomment">///      resulted `Message` (if has) to all participants.</span>
-<span class="doccomment">///   d, call `finalize_complaining_phase` to complete the complaining phase. (This separate call may need to</span>
-<span class="doccomment">///      depend on a separate timer &amp; checker against the key generator&#39;s current status)</span>
-<span class="doccomment">///   e, repeat step c when there is incoming `Message`.</span>
-<span class="doccomment">///   f, call `generate_keys` to get the public-key set and secret-key share, if the procedure finalized.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// 1. Call [`initialize`](Self::initialize) first to generate an instance.</span>
+<span class="doccomment">/// 2. Multicasting the return [`Message`] to all participants.</span>
+<span class="doccomment">/// 3. Call [`handle_message`](Self::handle_message) function to handle the incoming `Message` and</span>
+<span class="doccomment">///    multicasting the resulting `Message`s (if any) to all participants.</span>
+<span class="doccomment">/// 4. Call [`timed_phase_transition`](Self::timed_phase_transition) to complete the complaining</span>
+<span class="doccomment">///    phase.</span>
+<span class="doccomment">/// 5. Repeat step 3 when there is incoming `Message`.</span>
+<span class="doccomment">/// 6. Call [`generate_keys`](Self::generate_keys) to get the public-key set and secret-key share,</span>
+<span class="doccomment">///    if the procedure finalized.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">KeyGen</span> {
     <span class="doccomment">/// Our node ID.</span>
     <span class="ident">our_id</span>: <span class="ident">XorName</span>,
