@@ -39,6 +39,13 @@
 <span id="39">39</span>
 <span id="40">40</span>
 <span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
 </pre><pre class="rust">
 <span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
@@ -60,14 +67,21 @@
     <span class="kw">pub</span> <span class="ident">public_key_set</span>: <span class="ident">PublicKeySet</span>,
     <span class="doccomment">/// Secret Key share.</span>
     <span class="kw">pub</span> <span class="ident">secret_key_share</span>: <span class="ident">SecretKeyShare</span>,
+    <span class="doccomment">/// Our index in the group</span>
+    <span class="kw">pub</span> <span class="ident">index</span>: <span class="ident">usize</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Outcome</span> {
     <span class="doccomment">/// Create Outcome from components</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">public_key_set</span>: <span class="ident">PublicKeySet</span>, <span class="ident">secret_key_share</span>: <span class="ident">SecretKeyShare</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
+        <span class="ident">public_key_set</span>: <span class="ident">PublicKeySet</span>,
+        <span class="ident">secret_key_share</span>: <span class="ident">SecretKeyShare</span>,
+        <span class="ident">index</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">public_key_set</span>,
             <span class="ident">secret_key_share</span>,
+            <span class="ident">index</span>,
         }
     }
 }
@@ -76,8 +90,8 @@
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="macro">write!</span>(
             <span class="ident">formatter</span>,
-            <span class="string">&quot;Outcome({:?}, {:?})&quot;</span>,
-            <span class="self">self</span>.<span class="ident">public_key_set</span>, <span class="self">self</span>.<span class="ident">secret_key_share</span>
+            <span class="string">&quot;Outcome({:?}, {:?}, {:?})&quot;</span>,
+            <span class="self">self</span>.<span class="ident">public_key_set</span>, <span class="self">self</span>.<span class="ident">secret_key_share</span>, <span class="self">self</span>.<span class="ident">index</span>
         )
     }
 }
