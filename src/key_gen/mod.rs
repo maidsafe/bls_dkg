@@ -877,7 +877,10 @@ impl KeyGen {
             sk_val.add_assign(&row.evaluate(0));
         }
         let sk = SecretKeyShare::from_mut(&mut sk_val);
-        Some((self.names.clone(), Outcome::new(pk_commitment.into(), sk)))
+        Some((
+            self.names.clone(),
+            Outcome::new(pk_commitment.into(), sk, self.our_index as usize),
+        ))
     }
 
     /// This function shall be called when the DKG procedure not reach Finalization phase and before
