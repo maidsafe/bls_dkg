@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.6.0](https://github.com/maidsafe/bls_dkg/compare/v0.5.3...v0.6.0) (2021-08-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* updates public types
+
+### Features
+
+* add index to the Outcome type ([25683ab](https://github.com/maidsafe/bls_dkg/commit/25683abc131911388c47b47fe7759cc6bf5c4201))
+
 ### [0.5.3](https://github.com/maidsafe/bls_dkg/compare/v0.5.2...v0.5.3) (2021-08-10)
 
 ### [0.5.2](https://github.com/maidsafe/bls_dkg/compare/v0.5.1...v0.5.2) (2021-08-10)
