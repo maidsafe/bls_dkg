@@ -18,14 +18,21 @@ pub struct Outcome {
     pub public_key_set: PublicKeySet,
     /// Secret Key share.
     pub secret_key_share: SecretKeyShare,
+    /// Our index in the group
+    pub index: usize,
 }
 
 impl Outcome {
     /// Create Outcome from components
-    pub fn new(public_key_set: PublicKeySet, secret_key_share: SecretKeyShare) -> Self {
+    pub fn new(
+        public_key_set: PublicKeySet,
+        secret_key_share: SecretKeyShare,
+        index: usize,
+    ) -> Self {
         Self {
             public_key_set,
             secret_key_share,
+            index,
         }
     }
 }
@@ -34,8 +41,8 @@ impl Debug for Outcome {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "Outcome({:?}, {:?})",
-            self.public_key_set, self.secret_key_share
+            "Outcome({:?}, {:?}, {:?})",
+            self.public_key_set, self.secret_key_share, self.index
         )
     }
 }
