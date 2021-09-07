@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.7.0](https://github.com/maidsafe/bls_dkg/compare/v0.6.2...v0.7.0) (2021-09-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* this commit just changes the README to force through a
+new version that will bump the version number correctly.
+
+I'm using the title of the previous commit to indicate that that's where
+the relevant change is for the new release.
+
+* bump blsttc dep to 3.1.0 ([a9bc105](https://github.com/maidsafe/bls_dkg/commit/a9bc105dc45a3636902319642667167a452c66fe))
+
 ### [0.6.2](https://github.com/maidsafe/bls_dkg/compare/v0.6.1...v0.6.2) (2021-08-31)
 
 ### [0.6.1](https://github.com/maidsafe/bls_dkg/compare/v0.6.0...v0.6.1) (2021-08-24)
