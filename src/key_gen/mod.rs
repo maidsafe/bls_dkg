@@ -392,16 +392,27 @@ impl KeyGen {
     }
 
     fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
-        let pending_messages = std::mem::take(&mut self.pending_messages);
         let mut msgs = Vec::new();
-        for message in pending_messages {
-            if let Ok(new_messages) = self.process_message(rng, message.clone()) {
-                if self.is_finalized() {
-                    return Vec::new();
+        let mut updated = false;
+        loop {
+            trace!("new round polling pending messages");
+            let pending_messages = std::mem::take(&mut self.pending_messages);
+            for message in pending_messages {
+                if let Ok(new_messages) = self.process_message(rng, message.clone()) {
+                    if self.is_finalized() {
+                        return Vec::new();
+                    }
+                    msgs.extend(new_messages);
+                    updated = true;
+                } else {
+                    trace!("pushing back pending message {:?}", message);
+                    self.pending_messages.push(message);
                 }
-                msgs.extend(new_messages);
+            }
+            if !updated {
+                break;
             } else {
-                self.pending_messages.push(message);
+                updated = false;
             }
         }
         msgs
@@ -517,7 +528,7 @@ impl KeyGen {
                     part,
                 };
                 debug!(
-                    "{:?} complain {:?} with Error {:?}",
+                    "{:?} complain {:?} with Error {:?} when handling a proposal",
                     self, sender_index, _fault
                 );
                 let invalid_contribute = serialize(&msg)?;

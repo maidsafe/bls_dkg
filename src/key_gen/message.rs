@@ -55,15 +55,17 @@ impl fmt::Debug for Message {
                 "Initialization({:?} - {:?})",
                 member_list, key_gen_id
             ),
-            Message::Proposal { key_gen_id, .. } => write!(formatter, "Proposal({})", key_gen_id),
+            Message::Proposal { key_gen_id, part } => {
+                write!(formatter, "Proposal({} - {:?})", key_gen_id, part)
+            }
             Message::Complaint {
                 key_gen_id, target, ..
             } => write!(formatter, "Complaint({} - {})", key_gen_id, target),
             Message::Justification { key_gen_id, .. } => {
                 write!(formatter, "Justification({})", key_gen_id)
             }
-            Message::Acknowledgment { key_gen_id, .. } => {
-                write!(formatter, "Acknowledgment({})", key_gen_id)
+            Message::Acknowledgment { key_gen_id, ack } => {
+                write!(formatter, "Acknowledgment({} - {:?})", key_gen_id, ack)
             }
         }
     }
