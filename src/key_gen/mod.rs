@@ -318,8 +318,10 @@ pub struct KeyGen {
     complaints_accumulator: ComplaintsAccumulator,
     /// Pending complain messages.
     pending_complain_messages: Vec<Message>,
-    /// Pending messages that cannot handle yet.
-    pending_messages: Vec<Message>,
+    // /// Pending messages that cannot handle yet.
+    // pending_messages: Vec<Message>,
+    /// Cached messages to be used for reply unhandable.
+    caching_messages: BTreeMap<XorName, Message>,
 }
 
 impl KeyGen {
@@ -350,7 +352,8 @@ impl KeyGen {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(names.clone(), threshold),
             pending_complain_messages: Vec::new(),
-            pending_messages: Vec::new(),
+            // pending_messages: Vec::new(),
+            caching_messages: BTreeMap::new(),
         };
 
         Ok((
@@ -377,36 +380,59 @@ impl KeyGen {
         if self.is_finalized() {
             return Ok(Vec::new());
         }
-        let result = self.process_message(rng, msg.clone());
-        match result {
-            Ok(mut msgs) => {
-                msgs.extend(self.poll_pending_messages(rng));
-                Ok(msgs)
-            }
-            Err(Error::UnexpectedPhase { .. }) | Err(Error::MissingPart) => {
-                self.pending_messages.push(msg);
-                Ok(Vec::new())
-            }
-            Err(_) => result,
-        }
+
+        self.process_message(rng, msg)
     }
 
-    fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
+    /// Cached message will be returned with a list,
+    /// with Initialization messages on top and Proposal behind.
+    /// They shall get handled in such order on receiver side as well.
+    pub fn get_cached_message(&self) -> Vec<Message> {
+        let mut result = Vec::new();
+        result.extend(
+            self.caching_messages
+                .iter()
+                .filter_map(|(_, msg)| match msg {
+                    Message::Initialization { .. } => Some(msg.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<Message>>(),
+        );
+        result.extend(
+            self.caching_messages
+                .iter()
+                .filter_map(|(_, msg)| match msg {
+                    Message::Proposal { .. } => Some(msg.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<Message>>(),
+        );
+        result
+    }
+
+    /// Handle upper layer cached messages even before this DKG session got started.
+    /// Return will messages need to be broadcast to all,
+    /// AND unhandable messages need to be sent to the creator.
+    pub fn handle_pre_session_messages<R: RngCore>(
+        &mut self,
+        rng: &mut R,
+        mut cache_messages: Vec<Message>,
+    ) -> (Vec<Message>, Vec<(XorName, Message)>) {
         let mut msgs = Vec::new();
         let mut updated = false;
         loop {
             trace!("new round polling pending messages");
-            let pending_messages = std::mem::take(&mut self.pending_messages);
+            let pending_messages = std::mem::take(&mut cache_messages);
             for message in pending_messages {
                 if let Ok(new_messages) = self.process_message(rng, message.clone()) {
                     if self.is_finalized() {
-                        return Vec::new();
+                        return (Vec::new(), Vec::new());
                     }
                     msgs.extend(new_messages);
                     updated = true;
                 } else {
                     trace!("pushing back pending message {:?}", message);
-                    self.pending_messages.push(message);
+                    cache_messages.push(message);
                 }
             }
             if !updated {
@@ -415,8 +441,50 @@ impl KeyGen {
                 updated = false;
             }
         }
-        msgs
+
+        let mut unhandables = Vec::new();
+        for msg in cache_messages {
+            let sender = if let Some(name) = self.node_id_from_index(msg.creator()) {
+                name
+            } else {
+                warn!(
+                    "cannot get name of index {:?} among {:?}",
+                    msg.creator(),
+                    self.names
+                );
+                continue;
+            };
+            unhandables.push((sender, msg));
+        }
+        (msgs, unhandables)
     }
+
+    // fn poll_pending_messages<R: RngCore>(&mut self, rng: &mut R) -> Vec<Message> {
+    //     let mut msgs = Vec::new();
+    //     let mut updated = false;
+    //     loop {
+    //         trace!("new round polling pending messages");
+    //         let pending_messages = std::mem::take(&mut self.pending_messages);
+    //         for message in pending_messages {
+    //             if let Ok(new_messages) = self.process_message(rng, message.clone()) {
+    //                 if self.is_finalized() {
+    //                     return Vec::new();
+    //                 }
+    //                 msgs.extend(new_messages);
+    //                 updated = true;
+    //             } else {
+    //                 trace!("pushing back pending message {:?}", message);
+    //                 self.pending_messages.push(message);
+    //             }
+    //         }
+    //         if !updated {
+    //             break;
+    //         } else {
+    //             updated = false;
+    //         }
+    //     }
+    //     msgs
+    // }
 
     fn process_message<R: RngCore>(
         &mut self,
@@ -424,17 +492,26 @@ impl KeyGen {
         msg: Message,
     ) -> Result<Vec<Message>, Error> {
         debug!(
-            "{:?} with phase {:?} handle DKG message {:?}",
-            self, self.phase, msg
+            "{:?} with phase {:?} handle DKG message {:?}-{:?}",
+            self,
+            self.phase,
+            msg.id(),
+            msg
         );
-        match msg {
+        match msg.clone() {
             Message::Initialization {
                 key_gen_id,
                 m,
                 n,
                 member_list,
-            } => self.handle_initialization(rng, m, n, key_gen_id, member_list),
-            Message::Proposal { key_gen_id, part } => self.handle_proposal(key_gen_id, part),
+            } => {
+                let _ = self.caching_messages.insert(msg.id(), msg);
+                self.handle_initialization(rng, m, n, key_gen_id, member_list)
+            }
+            Message::Proposal { key_gen_id, part } => {
+                let _ = self.caching_messages.insert(msg.id(), msg);
+                self.handle_proposal(key_gen_id, part)
+            }
             Message::Complaint {
                 key_gen_id,
                 target,
@@ -459,10 +536,11 @@ impl KeyGen {
         member_list: BTreeSet<XorName>,
     ) -> Result<Vec<Message>, Error> {
         if self.phase != Phase::Initialization {
-            return Err(Error::UnexpectedPhase {
-                expected: Phase::Initialization,
-                actual: self.phase,
-            });
+            return Ok(Vec::new());
+            // return Err(Error::UnexpectedPhase {
+            //     expected: Phase::Initialization,
+            //     actual: self.phase,
+            // });
         }
 
         if let Some((m, _n, member_list)) =
@@ -512,11 +590,19 @@ impl KeyGen {
     // When there is an invalidation happens, holds the `Complaint` message till broadcast out
     // when `finalize_contributing` being called.
     fn handle_proposal(&mut self, sender_index: u64, part: Part) -> Result<Vec<Message>, Error> {
-        if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
+        // if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
+        //     return Err(Error::UnexpectedPhase {
+        //         expected: Phase::Contribution,
+        //         actual: self.phase,
+        //     });
+        // }
+        if self.phase == Phase::Initialization {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
                 actual: self.phase,
             });
+        } else if self.phase != Phase::Contribution {
+            return Ok(Vec::new());
         }
 
         let row = match self.handle_part_or_fault(sender_index, part.clone()) {
@@ -576,12 +662,21 @@ impl KeyGen {
         sender_index: u64,
         ack: Acknowledgment,
     ) -> Result<Vec<Message>, Error> {
-        if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
+        // if !(self.phase == Phase::Contribution || self.phase == Phase::Commitment) {
+        //     return Err(Error::UnexpectedPhase {
+        //         expected: Phase::Contribution,
+        //         actual: self.phase,
+        //     });
+        // }
+        if self.phase == Phase::Initialization {
             return Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
                 actual: self.phase,
             });
+        } else if self.phase != Phase::Contribution {
+            return Ok(Vec::new());
         }
+
         match self.handle_ack_or_fault(sender_index, ack.clone()) {
             Ok(()) => {
                 if self.all_contribution_received() {
@@ -656,7 +751,6 @@ impl KeyGen {
             self.become_finalization();
         }
 
-        self.pending_messages.clear();
         Ok(mem::take(&mut self.pending_complain_messages))
     }
 
@@ -692,20 +786,8 @@ impl KeyGen {
     ) -> Result<Vec<Message>, Error> {
         debug!("{:?} current phase is {:?}", self, self.phase);
         match self.phase {
-            Phase::Contribution => match self.finalize_contributing_phase() {
-                Ok(mut messages) => {
-                    messages.extend(self.poll_pending_messages(rng));
-                    Ok(messages)
-                }
-                Err(err) => Err(err),
-            },
-            Phase::Complaining => match self.finalize_complaining_phase(rng) {
-                Ok(mut messages) => {
-                    messages.extend(self.poll_pending_messages(rng));
-                    Ok(messages)
-                }
-                Err(err) => Err(err),
-            },
+            Phase::Contribution => self.finalize_contributing_phase(),
+            Phase::Complaining => self.finalize_complaining_phase(rng),
             Phase::Initialization => Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
                 actual: self.phase,
@@ -726,11 +808,15 @@ impl KeyGen {
         target_index: u64,
         invalid_msg: Vec<u8>,
     ) -> Result<Vec<Message>, Error> {
+        // if self.phase != Phase::Complaining {
+        //     return Err(Error::UnexpectedPhase {
+        //         expected: Phase::Complaining,
+        //         actual: self.phase,
+        //     });
+        // }
         if self.phase != Phase::Complaining {
-            return Err(Error::UnexpectedPhase {
-                expected: Phase::Complaining,
-                actual: self.phase,
-            });
+            trace!("To avoid triggering AE pattern, skip the complaint phase so far");
+            return Ok(Vec::new());
         }
 
         let sender_id = self
@@ -757,7 +843,10 @@ impl KeyGen {
                     let _ = result.insert(index);
                 }
             });
-            return Err(Error::TooManyNonVoters(result));
+            trace!("Finalized with too many failing voters");
+            trace!("To avoid triggering AE pattern, skip the complaint phase");
+            return Ok(Vec::new());
+            // return Err(Error::TooManyNonVoters(result));
         }
 
         let mut result = Vec::new();
@@ -832,7 +921,6 @@ impl KeyGen {
 
     fn become_finalization(&mut self) {
         self.phase = Phase::Finalization;
-        self.pending_messages.clear();
         self.pending_complain_messages.clear();
     }
 
@@ -1048,7 +1136,7 @@ impl KeyGen {
             initalization_accumulator: InitializationAccumulator::new(),
             complaints_accumulator: ComplaintsAccumulator::new(names, threshold),
             pending_complain_messages: Vec::new(),
-            pending_messages: Vec::new(),
+            caching_messages: BTreeMap::new(),
         }
     }
 }
