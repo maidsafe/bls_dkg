@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use xor_name::XorName;
 
 // Alter the configure of the number of nodes and the threshold.
-const NODENUM: usize = 7;
-const THRESHOLD: usize = 5;
+const NODENUM: usize = 5;
+const THRESHOLD: usize = 3;
 
 fn setup_generators<R: RngCore>(
     mut rng: &mut R,
@@ -77,18 +77,36 @@ fn messaging<R: RngCore>(
     proposals: &mut Vec<Message>,
     non_responsives: BTreeSet<u64>,
 ) {
+    // Simulating the AE pattern
+    let mut cached_msg = BTreeMap::<XorName, Message>::new();
+
     // Keep broadcasting the proposals among the generators till no more.
     // The proposal from non_responsive nodes shall be ignored.
     while !proposals.is_empty() {
         let proposals_local = std::mem::take(proposals);
         for proposal in &proposals_local {
+            match proposal {
+                Message::Initialization { .. } | Message::Proposal { .. } => {
+                    let _ = cached_msg.insert(proposal.id(), proposal.clone());
+                }
+                _ => {}
+            }
             for (index, generator) in generators.iter_mut().enumerate() {
-                if let Ok(proposal_vec) = generator.handle_message(&mut rng, proposal.clone()) {
-                    if !non_responsives.contains(&(index as u64)) {
-                        proposal_vec
-                            .iter()
-                            .for_each(|prop| proposals.push(prop.clone()));
-                    }
+                let proposal_vec = if let Ok(proposal_vec) =
+                    generator.handle_message(&mut rng, proposal.clone())
+                {
+                    proposal_vec
+                } else {
+                    let mut messages: Vec<Message> = cached_msg.values().cloned().collect();
+                    messages.push(proposal.clone());
+                    let (proposal_vec, _unhandable) =
+                        generator.handle_pre_session_messages(&mut rng, messages);
+                    proposal_vec
+                };
+                if !non_responsives.contains(&(index as u64)) {
+                    proposal_vec
+                        .iter()
+                        .for_each(|prop| proposals.push(prop.clone()));
                 }
             }
         }
@@ -234,7 +252,11 @@ fn having_min_unresponsive_nodes_cause_block() -> Result<()> {
         if let Err(err) = generators[index].timed_phase_transition(&mut rng) {
             assert_eq!(err, Error::TooManyNonVoters(non_responsives.clone()));
         } else {
-            return Err(format_err!("Node {:?} shall not progress anymore", peer_id));
+            return Err(format_err!(
+                "Node {:?}-{:?} shall not progress anymore",
+                index,
+                peer_id
+            ));
         }
     }
     // List already returned within the above call to `finalize_complaining_phase`. So here it
