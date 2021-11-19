@@ -1098,6 +1098,42 @@
 <span id="1098">1098</span>
 <span id="1099">1099</span>
 <span id="1100">1100</span>
+<span id="1101">1101</span>
+<span id="1102">1102</span>
+<span id="1103">1103</span>
+<span id="1104">1104</span>
+<span id="1105">1105</span>
+<span id="1106">1106</span>
+<span id="1107">1107</span>
+<span id="1108">1108</span>
+<span id="1109">1109</span>
+<span id="1110">1110</span>
+<span id="1111">1111</span>
+<span id="1112">1112</span>
+<span id="1113">1113</span>
+<span id="1114">1114</span>
+<span id="1115">1115</span>
+<span id="1116">1116</span>
+<span id="1117">1117</span>
+<span id="1118">1118</span>
+<span id="1119">1119</span>
+<span id="1120">1120</span>
+<span id="1121">1121</span>
+<span id="1122">1122</span>
+<span id="1123">1123</span>
+<span id="1124">1124</span>
+<span id="1125">1125</span>
+<span id="1126">1126</span>
+<span id="1127">1127</span>
+<span id="1128">1128</span>
+<span id="1129">1129</span>
+<span id="1130">1130</span>
+<span id="1131">1131</span>
+<span id="1132">1132</span>
+<span id="1133">1133</span>
+<span id="1134">1134</span>
+<span id="1135">1135</span>
+<span id="1136">1136</span>
 </pre><pre class="rust"><code><span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
 <span class="comment">// This SAFE Network Software is licensed to you under the MIT license &lt;LICENSE-MIT</span>
@@ -1418,8 +1454,8 @@
     <span class="ident">complaints_accumulator</span>: <span class="ident">ComplaintsAccumulator</span>,
     <span class="doccomment">/// Pending complain messages.</span>
     <span class="ident">pending_complain_messages</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
-    <span class="doccomment">/// Pending messages that cannot handle yet.</span>
-    <span class="ident">pending_messages</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// Cached messages to be used for reply unhandable.</span>
+    <span class="ident">message_cache</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">XorName</span>, <span class="ident">Message</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">KeyGen</span> {
@@ -1450,7 +1486,7 @@
             <span class="ident">initalization_accumulator</span>: <span class="ident">InitializationAccumulator::new</span>(),
             <span class="ident">complaints_accumulator</span>: <span class="ident">ComplaintsAccumulator::new</span>(<span class="ident">names</span>.<span class="ident">clone</span>(), <span class="ident">threshold</span>),
             <span class="ident">pending_complain_messages</span>: <span class="ident">Vec::new</span>(),
-            <span class="ident">pending_messages</span>: <span class="ident">Vec::new</span>(),
+            <span class="ident">message_cache</span>: <span class="ident">BTreeMap::new</span>(),
         };
 
         <span class="prelude-val">Ok</span>((
@@ -1477,36 +1513,60 @@
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_finalized</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
-        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">process_message</span>(<span class="ident">rng</span>, <span class="ident">msg</span>.<span class="ident">clone</span>());
-        <span class="kw">match</span> <span class="ident">result</span> {
-            <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">msgs</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">msgs</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
-                <span class="prelude-val">Ok</span>(<span class="ident">msgs</span>)
-            }
-            <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> { .. }) <span class="op">|</span> <span class="prelude-val">Err</span>(<span class="ident">Error::MissingPart</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">self</span>.<span class="ident">pending_messages</span>.<span class="ident">push</span>(<span class="ident">msg</span>);
-                <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>())
-            }
-            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">result</span>,
-        }
+
+        <span class="self">self</span>.<span class="ident">process_message</span>(<span class="ident">rng</span>, <span class="ident">msg</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">poll_pending_messages</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Cached message will be returned as a list,</span>
+    <span class="doccomment">/// with Initialization messages on top and Proposal behind.</span>
+    <span class="doccomment">/// They shall get handled in such order on receiver side as well.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_cached_message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="ident">result</span>.<span class="ident">extend</span>(
+            <span class="self">self</span>.<span class="ident">message_cache</span>
+                .<span class="ident">iter</span>()
+                .<span class="ident">filter_map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">msg</span>)<span class="op">|</span> <span class="kw">match</span> <span class="ident">msg</span> {
+                    <span class="ident">Message::Initialization</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>.<span class="ident">clone</span>()),
+                    <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
+                })
+                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span><span class="op">&gt;</span>(),
+        );
+        <span class="ident">result</span>.<span class="ident">extend</span>(
+            <span class="self">self</span>.<span class="ident">message_cache</span>
+                .<span class="ident">iter</span>()
+                .<span class="ident">filter_map</span>(<span class="op">|</span>(<span class="kw">_</span>, <span class="ident">msg</span>)<span class="op">|</span> <span class="kw">match</span> <span class="ident">msg</span> {
+                    <span class="ident">Message::Proposal</span> { .. } <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>.<span class="ident">clone</span>()),
+                    <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">None</span>,
+                })
+                .<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span><span class="op">&gt;</span>(),
+        );
+        <span class="ident">result</span>
+    }
+
+    <span class="doccomment">/// Handle upper layer cached messages even before this DKG session got started.</span>
+    <span class="doccomment">/// Returns with messages need to be broadcast to all,</span>
+    <span class="doccomment">/// AND unhandable messages need to be sent to the creator.</span>
+    <span class="doccomment">/// It is also being used when handle message_history due to unhandable.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_pre_session_messages</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
+        <span class="kw-2">mut</span> <span class="ident">cache_messages</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">XorName</span>, <span class="ident">Message</span>)<span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msgs</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">updated</span> <span class="op">=</span> <span class="bool-val">false</span>;
         <span class="kw">loop</span> {
-            <span class="macro">trace!</span>(<span class="string">&quot;new round polling pending messages&quot;</span>);
-            <span class="kw">let</span> <span class="ident">pending_messages</span> <span class="op">=</span> <span class="ident">std::mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">pending_messages</span>);
+            <span class="macro">trace!</span>(<span class="string">&quot;new round polling history messages&quot;</span>);
+            <span class="kw">let</span> <span class="ident">pending_messages</span> <span class="op">=</span> <span class="ident">std::mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cache_messages</span>);
             <span class="kw">for</span> <span class="ident">message</span> <span class="kw">in</span> <span class="ident">pending_messages</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">new_messages</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">process_message</span>(<span class="ident">rng</span>, <span class="ident">message</span>.<span class="ident">clone</span>()) {
                     <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_finalized</span>() {
-                        <span class="kw">return</span> <span class="ident">Vec::new</span>();
+                        <span class="kw">return</span> (<span class="ident">Vec::new</span>(), <span class="ident">Vec::new</span>());
                     }
                     <span class="ident">msgs</span>.<span class="ident">extend</span>(<span class="ident">new_messages</span>);
                     <span class="ident">updated</span> <span class="op">=</span> <span class="bool-val">true</span>;
                 } <span class="kw">else</span> {
-                    <span class="macro">trace!</span>(<span class="string">&quot;pushing back pending message {:?}&quot;</span>, <span class="ident">message</span>);
-                    <span class="self">self</span>.<span class="ident">pending_messages</span>.<span class="ident">push</span>(<span class="ident">message</span>);
+                    <span class="macro">trace!</span>(<span class="string">&quot;pushing back history message {:?}&quot;</span>, <span class="ident">message</span>);
+                    <span class="ident">cache_messages</span>.<span class="ident">push</span>(<span class="ident">message</span>);
                 }
             }
             <span class="kw">if</span> <span class="op">!</span><span class="ident">updated</span> {
@@ -1515,7 +1575,22 @@
                 <span class="ident">updated</span> <span class="op">=</span> <span class="bool-val">false</span>;
             }
         }
-        <span class="ident">msgs</span>
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">unhandables</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="kw">for</span> <span class="ident">msg</span> <span class="kw">in</span> <span class="ident">cache_messages</span> {
+            <span class="kw">let</span> <span class="ident">sender</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">node_id_from_index</span>(<span class="ident">msg</span>.<span class="ident">creator</span>()) {
+                <span class="ident">name</span>
+            } <span class="kw">else</span> {
+                <span class="macro">warn!</span>(
+                    <span class="string">&quot;cannot get name of index {:?} among {:?}&quot;</span>,
+                    <span class="ident">msg</span>.<span class="ident">creator</span>(),
+                    <span class="self">self</span>.<span class="ident">names</span>
+                );
+                <span class="kw">continue</span>;
+            };
+            <span class="ident">unhandables</span>.<span class="ident">push</span>((<span class="ident">sender</span>, <span class="ident">msg</span>));
+        }
+        (<span class="ident">msgs</span>, <span class="ident">unhandables</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">process_message</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(
@@ -1523,18 +1598,27 @@
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="macro">debug!</span>(
-            <span class="string">&quot;{:?} with phase {:?} handle DKG message {:?}&quot;</span>,
-            <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>, <span class="ident">msg</span>
+        <span class="macro">trace!</span>(
+            <span class="string">&quot;{:?} with phase {:?} handle DKG message {:?}-{:?}&quot;</span>,
+            <span class="self">self</span>,
+            <span class="self">self</span>.<span class="ident">phase</span>,
+            <span class="ident">msg</span>.<span class="ident">id</span>(),
+            <span class="ident">msg</span>
         );
-        <span class="kw">match</span> <span class="ident">msg</span> {
+        <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">clone</span>() {
             <span class="ident">Message::Initialization</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">m</span>,
                 <span class="ident">n</span>,
                 <span class="ident">member_list</span>,
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_initialization</span>(<span class="ident">rng</span>, <span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">key_gen_id</span>, <span class="ident">member_list</span>),
-            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>),
+            } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">message_cache</span>.<span class="ident">insert</span>(<span class="ident">msg</span>.<span class="ident">id</span>(), <span class="ident">msg</span>);
+                <span class="self">self</span>.<span class="ident">handle_initialization</span>(<span class="ident">rng</span>, <span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">key_gen_id</span>, <span class="ident">member_list</span>)
+            }
+            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">message_cache</span>.<span class="ident">insert</span>(<span class="ident">msg</span>.<span class="ident">id</span>(), <span class="ident">msg</span>);
+                <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>)
+            }
             <span class="ident">Message::Complaint</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">target</span>,
@@ -1559,10 +1643,7 @@
         <span class="ident">member_list</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!</span><span class="op">=</span> <span class="ident">Phase::Initialization</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
-                <span class="ident">expected</span>: <span class="ident">Phase::Initialization</span>,
-                <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
-            });
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">m</span>, <span class="ident">_n</span>, <span class="ident">member_list</span>)) <span class="op">=</span>
@@ -1612,11 +1693,13 @@
     <span class="comment">// When there is an invalidation happens, holds the `Complaint` message till broadcast out</span>
     <span class="comment">// when `finalize_contributing` being called.</span>
     <span class="kw">fn</span> <span class="ident">handle_proposal</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sender_index</span>: <span class="ident">u64</span>, <span class="ident">part</span>: <span class="ident">Part</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Commitment</span>) {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Initialization</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase::Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
             });
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Commitment</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
 
         <span class="kw">let</span> <span class="ident">row</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">handle_part_or_fault</span>(<span class="ident">sender_index</span>, <span class="ident">part</span>.<span class="ident">clone</span>()) {
@@ -1676,12 +1759,15 @@
         <span class="ident">sender_index</span>: <span class="ident">u64</span>,
         <span class="ident">ack</span>: <span class="ident">Acknowledgment</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Commitment</span>) {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Initialization</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase::Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
             });
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Contribution</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Commitment</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
+
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">handle_ack_or_fault</span>(<span class="ident">sender_index</span>, <span class="ident">ack</span>.<span class="ident">clone</span>()) {
             <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">all_contribution_received</span>() {
@@ -1756,7 +1842,6 @@
             <span class="self">self</span>.<span class="ident">become_finalization</span>();
         }
 
-        <span class="self">self</span>.<span class="ident">pending_messages</span>.<span class="ident">clear</span>();
         <span class="prelude-val">Ok</span>(<span class="ident">mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">pending_complain_messages</span>))
     }
 
@@ -1790,22 +1875,10 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
-        <span class="macro">debug!</span>(<span class="string">&quot;{:?} current phase is {:?}&quot;</span>, <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>);
+        <span class="macro">trace!</span>(<span class="string">&quot;{:?} current phase is {:?}&quot;</span>, <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">phase</span> {
-            <span class="ident">Phase::Contribution</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>() {
-                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="ident">messages</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
-                    <span class="prelude-val">Ok</span>(<span class="ident">messages</span>)
-                }
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
-            },
-            <span class="ident">Phase::Complaining</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">finalize_complaining_phase</span>(<span class="ident">rng</span>) {
-                <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">messages</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="ident">messages</span>.<span class="ident">extend</span>(<span class="self">self</span>.<span class="ident">poll_pending_messages</span>(<span class="ident">rng</span>));
-                    <span class="prelude-val">Ok</span>(<span class="ident">messages</span>)
-                }
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
-            },
+            <span class="ident">Phase::Contribution</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>(),
+            <span class="ident">Phase::Complaining</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">finalize_complaining_phase</span>(<span class="ident">rng</span>),
             <span class="ident">Phase::Initialization</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
                 <span class="ident">expected</span>: <span class="ident">Phase::Contribution</span>,
                 <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
@@ -1827,10 +1900,8 @@
         <span class="ident">invalid_msg</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">!</span><span class="op">=</span> <span class="ident">Phase::Complaining</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
-                <span class="ident">expected</span>: <span class="ident">Phase::Complaining</span>,
-                <span class="ident">actual</span>: <span class="self">self</span>.<span class="ident">phase</span>,
-            });
+            <span class="macro">trace!</span>(<span class="string">&quot;To avoid triggering AE pattern, skip this so far&quot;</span>);
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
 
         <span class="kw">let</span> <span class="ident">sender_id</span> <span class="op">=</span> <span class="self">self</span>
@@ -1850,6 +1921,7 @@
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">failings</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">complaints_accumulator</span>.<span class="ident">finalize_complaining_phase</span>();
+
         <span class="kw">if</span> <span class="ident">failings</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="self">self</span>.<span class="ident">threshold</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">BTreeSet::new</span>();
             <span class="ident">failings</span>.<span class="ident">iter</span>().<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">pk</span><span class="op">|</span> {
@@ -1857,6 +1929,7 @@
                     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">result</span>.<span class="ident">insert</span>(<span class="ident">index</span>);
                 }
             });
+            <span class="macro">trace!</span>(<span class="string">&quot;Finalized with too many failing voters&quot;</span>);
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::TooManyNonVoters</span>(<span class="ident">result</span>));
         }
 
@@ -1932,7 +2005,6 @@
 
     <span class="kw">fn</span> <span class="ident">become_finalization</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span> <span class="ident">Phase::Finalization</span>;
-        <span class="self">self</span>.<span class="ident">pending_messages</span>.<span class="ident">clear</span>();
         <span class="self">self</span>.<span class="ident">pending_complain_messages</span>.<span class="ident">clear</span>();
     }
 
@@ -2148,7 +2220,7 @@
             <span class="ident">initalization_accumulator</span>: <span class="ident">InitializationAccumulator::new</span>(),
             <span class="ident">complaints_accumulator</span>: <span class="ident">ComplaintsAccumulator::new</span>(<span class="ident">names</span>, <span class="ident">threshold</span>),
             <span class="ident">pending_complain_messages</span>: <span class="ident">Vec::new</span>(),
-            <span class="ident">pending_messages</span>: <span class="ident">Vec::new</span>(),
+            <span class="ident">message_cache</span>: <span class="ident">BTreeMap::new</span>(),
         }
     }
 }
