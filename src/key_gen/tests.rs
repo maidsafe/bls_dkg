@@ -8,7 +8,7 @@
 // Software.
 
 use crate::dev_utils::{create_ids, PeerId};
-use crate::key_gen::{message::Message, Error, KeyGen};
+use crate::key_gen::{message::Message, Error, KeyGen, MessageAndTarget};
 use anyhow::{format_err, Result};
 use bincode::serialize;
 use blsttc::{PublicKeySet, SignatureShare};
@@ -48,7 +48,7 @@ fn create_generators<R: RngCore>(
     let mut proposals = Vec::new();
     for peer_id in peer_ids.iter() {
         let key_gen = {
-            let (key_gen, proposal) =
+            let (key_gen, messaging) =
                 match KeyGen::initialize(peer_id.name(), threshold, names.clone()) {
                     Ok(result) => result,
                     Err(err) => {
@@ -59,7 +59,7 @@ fn create_generators<R: RngCore>(
                         ))
                     }
                 };
-            proposals.push(proposal);
+            proposals.extend(messaging);
             key_gen
         };
 
@@ -74,7 +74,7 @@ fn create_generators<R: RngCore>(
 fn messaging<R: RngCore>(
     mut rng: &mut R,
     generators: &mut Vec<KeyGen>,
-    proposals: &mut Vec<Message>,
+    proposals: &mut Vec<MessageAndTarget>,
     non_responsives: BTreeSet<u64>,
 ) {
     // Simulating the AE pattern
@@ -84,7 +84,7 @@ fn messaging<R: RngCore>(
     // The proposal from non_responsive nodes shall be ignored.
     while !proposals.is_empty() {
         let proposals_local = std::mem::take(proposals);
-        for proposal in &proposals_local {
+        for (receiver, proposal) in &proposals_local {
             match proposal {
                 Message::Initialization { .. } | Message::Proposal { .. } => {
                     let _ = cached_msg.insert(proposal.id(), proposal.clone());
@@ -92,21 +92,23 @@ fn messaging<R: RngCore>(
                 _ => {}
             }
             for (index, generator) in generators.iter_mut().enumerate() {
-                let proposal_vec = if let Ok(proposal_vec) =
-                    generator.handle_message(&mut rng, proposal.clone())
-                {
-                    proposal_vec
-                } else {
-                    let mut messages: Vec<Message> = cached_msg.values().cloned().collect();
-                    messages.push(proposal.clone());
-                    let (proposal_vec, _unhandable) =
-                        generator.handle_pre_session_messages(&mut rng, messages);
-                    proposal_vec
-                };
-                if !non_responsives.contains(&(index as u64)) {
-                    proposal_vec
-                        .iter()
-                        .for_each(|prop| proposals.push(prop.clone()));
+                if receiver == &generator.our_id {
+                    let messaging_vec = if let Ok(messaging_vec) =
+                        generator.handle_message(&mut rng, proposal.clone())
+                    {
+                        messaging_vec
+                    } else {
+                        let mut messages: Vec<Message> = cached_msg.values().cloned().collect();
+                        messages.push(proposal.clone());
+                        let (messaging_vec, _unhandable) =
+                            generator.handle_pre_session_messages(&mut rng, messages);
+                        messaging_vec
+                    };
+                    if !non_responsives.contains(&(index as u64)) {
+                        messaging_vec
+                            .iter()
+                            .for_each(|prop| proposals.push(prop.clone()));
+                    }
                 }
             }
         }
