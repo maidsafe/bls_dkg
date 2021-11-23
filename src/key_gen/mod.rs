@@ -102,7 +102,7 @@ impl Debug for Part {
 /// For each node, it contains `proposal_index, receiver_index, serialised value for the receiver,
 /// encrypted values from the sender`.
 #[derive(Deserialize, Serialize, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Acknowledgment(u64, u64, Vec<u8>, Vec<Vec<u8>>);
+pub struct Acknowledgment(pub u64, u64, Vec<u8>, Vec<Vec<u8>>);
 
 impl Debug for Acknowledgment {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -281,6 +281,8 @@ impl ComplaintsAccumulator {
     }
 }
 
+pub type MessageAndTarget = (XorName, Message);
+
 /// An algorithm for dealerless distributed key generation.
 ///
 /// This is trying to follow the protocol as suggested at
@@ -329,7 +331,7 @@ impl KeyGen {
         our_id: XorName,
         threshold: usize,
         names: BTreeSet<XorName>,
-    ) -> Result<(KeyGen, Message), Error> {
+    ) -> Result<(KeyGen, Vec<MessageAndTarget>), Error> {
         if names.len() < threshold {
             return Err(Error::Unknown);
         }
@@ -353,15 +355,15 @@ impl KeyGen {
             message_cache: BTreeMap::new(),
         };
 
-        Ok((
-            key_gen,
-            Message::Initialization {
-                key_gen_id: our_index,
-                m: threshold,
-                n: names.len(),
-                member_list: names,
-            },
-        ))
+        let msg = Message::Initialization {
+            key_gen_id: our_index,
+            m: threshold,
+            n: names.len(),
+            member_list: names.clone(),
+        };
+        let messages: Vec<_> = names.iter().map(|name| (*name, msg.clone())).collect();
+
+        Ok((key_gen, messages))
     }
 
     pub fn phase(&self) -> Phase {
@@ -373,7 +375,7 @@ impl KeyGen {
         &mut self,
         rng: &mut R,
         msg: Message,
-    ) -> Result<Vec<Message>, Error> {
+    ) -> Result<Vec<MessageAndTarget>, Error> {
         if self.is_finalized() {
             return Ok(Vec::new());
         }
@@ -415,7 +417,7 @@ impl KeyGen {
         &mut self,
         rng: &mut R,
         mut cache_messages: Vec<Message>,
-    ) -> (Vec<Message>, Vec<(XorName, Message)>) {
+    ) -> (Vec<MessageAndTarget>, Vec<MessageAndTarget>) {
         let mut msgs = Vec::new();
         let mut updated = false;
         loop {
@@ -461,7 +463,7 @@ impl KeyGen {
         &mut self,
         rng: &mut R,
         msg: Message,
-    ) -> Result<Vec<Message>, Error> {
+    ) -> Result<Vec<MessageAndTarget>, Error> {
         trace!(
             "{:?} with phase {:?} handle DKG message {:?}-{:?}",
             self,
@@ -469,7 +471,7 @@ impl KeyGen {
             msg.id(),
             msg
         );
-        match msg.clone() {
+        let result = match msg.clone() {
             Message::Initialization {
                 key_gen_id,
                 m,
@@ -479,10 +481,7 @@ impl KeyGen {
                 let _ = self.message_cache.insert(msg.id(), msg);
                 self.handle_initialization(rng, m, n, key_gen_id, member_list)
             }
-            Message::Proposal { key_gen_id, part } => {
-                let _ = self.message_cache.insert(msg.id(), msg);
-                self.handle_proposal(key_gen_id, part)
-            }
+            Message::Proposal { key_gen_id, part } => self.handle_proposal(key_gen_id, part),
             Message::Complaint {
                 key_gen_id,
                 target,
@@ -493,7 +492,8 @@ impl KeyGen {
                 keys_map,
             } => self.handle_justification(key_gen_id, keys_map),
             Message::Acknowledgment { key_gen_id, ack } => self.handle_ack(key_gen_id, ack),
-        }
+        };
+        self.multicasting_messages(result)
     }
 
     // Handles an incoming initialize message. Creates the `Proposal` message once quorumn
@@ -738,9 +738,9 @@ impl KeyGen {
     pub fn timed_phase_transition<R: RngCore>(
         &mut self,
         rng: &mut R,
-    ) -> Result<Vec<Message>, Error> {
+    ) -> Result<Vec<MessageAndTarget>, Error> {
         trace!("{:?} current phase is {:?}", self, self.phase);
-        match self.phase {
+        let result = match self.phase {
             Phase::Contribution => self.finalize_contributing_phase(),
             Phase::Complaining => self.finalize_complaining_phase(rng),
             Phase::Initialization => Err(Error::UnexpectedPhase {
@@ -753,6 +753,58 @@ impl KeyGen {
             }),
 
             Phase::Finalization => Ok(Vec::new()),
+        };
+        self.multicasting_messages(result)
+    }
+
+    // Specify the receiver of the DKG messages explicitly
+    // to avoid un-necessary broadcasting.
+    fn multicasting_messages(
+        &mut self,
+        result: Result<Vec<Message>, Error>,
+    ) -> Result<Vec<MessageAndTarget>, Error> {
+        match result {
+            Ok(messages) => {
+                let mut messaging = Vec::new();
+                for message in messages {
+                    match message {
+                        Message::Proposal { ref part, .. } => {
+                            // Proposal to us cannot be used by other.
+                            // So the cache must be carried out on sender side.
+                            let _ = self.message_cache.insert(message.id(), message.clone());
+
+                            let receiver =
+                                if let Some(name) = self.node_id_from_index(part.receiver) {
+                                    name
+                                } else {
+                                    warn!(
+                                        "For a Proposal, Cannot get name of index {:?} among {:?}",
+                                        part.receiver, self.names
+                                    );
+                                    continue;
+                                };
+                            messaging.push((receiver, message));
+                        }
+                        Message::Acknowledgment { ref ack, .. } => {
+                            let receiver = if let Some(name) = self.node_id_from_index(ack.1) {
+                                name
+                            } else {
+                                warn!("For an Acknowledgement, Cannot get name of index {:?} among {:?}",
+                                    ack.1, self.names);
+                                continue;
+                            };
+                            messaging.push((receiver, message));
+                        }
+                        _ => {
+                            for name in &self.names {
+                                messaging.push((*name, message.clone()));
+                            }
+                        }
+                    }
+                }
+                Ok(messaging)
+            }
+            Err(err) => Err(err),
         }
     }
 
@@ -881,7 +933,7 @@ impl KeyGen {
     }
 
     /// Returns the id of the index, or `None` if it is unknown.
-    fn node_id_from_index(&self, node_index: u64) -> Option<XorName> {
+    pub fn node_id_from_index(&self, node_index: u64) -> Option<XorName> {
         for (i, name) in self.names.iter().enumerate() {
             if i == node_index as usize {
                 return Some(*name);
@@ -906,7 +958,16 @@ impl KeyGen {
 
     /// Returns `true` if in the phase of Finalization.
     pub fn is_finalized(&self) -> bool {
-        self.phase == Phase::Finalization
+        let result = self.phase == Phase::Finalization;
+
+        if !result {
+            trace!("incompleted DKG session containing:");
+            for (key, part) in self.parts.iter() {
+                let acks: Vec<u64> = part.values.keys().cloned().collect();
+                trace!("    Part from {:?}, and acks from {:?}", key, acks);
+            }
+        }
+        result
     }
 
     /// Returns the new secret key share and the public key set.
