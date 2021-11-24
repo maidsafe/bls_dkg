@@ -1134,6 +1134,67 @@
 <span id="1134">1134</span>
 <span id="1135">1135</span>
 <span id="1136">1136</span>
+<span id="1137">1137</span>
+<span id="1138">1138</span>
+<span id="1139">1139</span>
+<span id="1140">1140</span>
+<span id="1141">1141</span>
+<span id="1142">1142</span>
+<span id="1143">1143</span>
+<span id="1144">1144</span>
+<span id="1145">1145</span>
+<span id="1146">1146</span>
+<span id="1147">1147</span>
+<span id="1148">1148</span>
+<span id="1149">1149</span>
+<span id="1150">1150</span>
+<span id="1151">1151</span>
+<span id="1152">1152</span>
+<span id="1153">1153</span>
+<span id="1154">1154</span>
+<span id="1155">1155</span>
+<span id="1156">1156</span>
+<span id="1157">1157</span>
+<span id="1158">1158</span>
+<span id="1159">1159</span>
+<span id="1160">1160</span>
+<span id="1161">1161</span>
+<span id="1162">1162</span>
+<span id="1163">1163</span>
+<span id="1164">1164</span>
+<span id="1165">1165</span>
+<span id="1166">1166</span>
+<span id="1167">1167</span>
+<span id="1168">1168</span>
+<span id="1169">1169</span>
+<span id="1170">1170</span>
+<span id="1171">1171</span>
+<span id="1172">1172</span>
+<span id="1173">1173</span>
+<span id="1174">1174</span>
+<span id="1175">1175</span>
+<span id="1176">1176</span>
+<span id="1177">1177</span>
+<span id="1178">1178</span>
+<span id="1179">1179</span>
+<span id="1180">1180</span>
+<span id="1181">1181</span>
+<span id="1182">1182</span>
+<span id="1183">1183</span>
+<span id="1184">1184</span>
+<span id="1185">1185</span>
+<span id="1186">1186</span>
+<span id="1187">1187</span>
+<span id="1188">1188</span>
+<span id="1189">1189</span>
+<span id="1190">1190</span>
+<span id="1191">1191</span>
+<span id="1192">1192</span>
+<span id="1193">1193</span>
+<span id="1194">1194</span>
+<span id="1195">1195</span>
+<span id="1196">1196</span>
+<span id="1197">1197</span>
 </pre><pre class="rust"><code><span class="comment">// Copyright 2020 MaidSafe.net limited.</span>
 <span class="comment">//</span>
 <span class="comment">// This SAFE Network Software is licensed to you under the MIT license &lt;LICENSE-MIT</span>
@@ -1238,7 +1299,7 @@
 <span class="doccomment">/// For each node, it contains `proposal_index, receiver_index, serialised value for the receiver,</span>
 <span class="doccomment">/// encrypted values from the sender`.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Deserialize</span>, <span class="ident">Serialize</span>, <span class="ident">Clone</span>, <span class="ident">Hash</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Acknowledgment</span>(<span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>);
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Acknowledgment</span>(<span class="kw">pub</span> <span class="ident">u64</span>, <span class="ident">u64</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Acknowledgment</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
@@ -1417,6 +1478,8 @@
     }
 }
 
+<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">MessageAndTarget</span> <span class="op">=</span> (<span class="ident">XorName</span>, <span class="ident">Message</span>);
+
 <span class="doccomment">/// An algorithm for dealerless distributed key generation.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// This is trying to follow the protocol as suggested at</span>
@@ -1465,7 +1528,7 @@
         <span class="ident">our_id</span>: <span class="ident">XorName</span>,
         <span class="ident">threshold</span>: <span class="ident">usize</span>,
         <span class="ident">names</span>: <span class="ident">BTreeSet</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">KeyGen</span>, <span class="ident">Message</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">KeyGen</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>), <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">names</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">threshold</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::Unknown</span>);
         }
@@ -1489,15 +1552,15 @@
             <span class="ident">message_cache</span>: <span class="ident">BTreeMap::new</span>(),
         };
 
-        <span class="prelude-val">Ok</span>((
-            <span class="ident">key_gen</span>,
-            <span class="ident">Message::Initialization</span> {
-                <span class="ident">key_gen_id</span>: <span class="ident">our_index</span>,
-                <span class="ident">m</span>: <span class="ident">threshold</span>,
-                <span class="ident">n</span>: <span class="ident">names</span>.<span class="ident">len</span>(),
-                <span class="ident">member_list</span>: <span class="ident">names</span>,
-            },
-        ))
+        <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message::Initialization</span> {
+            <span class="ident">key_gen_id</span>: <span class="ident">our_index</span>,
+            <span class="ident">m</span>: <span class="ident">threshold</span>,
+            <span class="ident">n</span>: <span class="ident">names</span>.<span class="ident">len</span>(),
+            <span class="ident">member_list</span>: <span class="ident">names</span>.<span class="ident">clone</span>(),
+        };
+        <span class="kw">let</span> <span class="ident">messages</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">name</span><span class="op">|</span> (<span class="kw-2">*</span><span class="ident">name</span>, <span class="ident">msg</span>.<span class="ident">clone</span>())).<span class="ident">collect</span>();
+
+        <span class="prelude-val">Ok</span>((<span class="ident">key_gen</span>, <span class="ident">messages</span>))
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">phase</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Phase</span> {
@@ -1509,7 +1572,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_finalized</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>());
         }
@@ -1551,7 +1614,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="kw-2">mut</span> <span class="ident">cache_messages</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="ident">XorName</span>, <span class="ident">Message</span>)<span class="op">&gt;</span>) {
+    ) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msgs</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">updated</span> <span class="op">=</span> <span class="bool-val">false</span>;
         <span class="kw">loop</span> {
@@ -1597,7 +1660,7 @@
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
         <span class="ident">msg</span>: <span class="ident">Message</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="macro">trace!</span>(
             <span class="string">&quot;{:?} with phase {:?} handle DKG message {:?}-{:?}&quot;</span>,
             <span class="self">self</span>,
@@ -1605,7 +1668,7 @@
             <span class="ident">msg</span>.<span class="ident">id</span>(),
             <span class="ident">msg</span>
         );
-        <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">clone</span>() {
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">msg</span>.<span class="ident">clone</span>() {
             <span class="ident">Message::Initialization</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">m</span>,
@@ -1615,10 +1678,7 @@
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">message_cache</span>.<span class="ident">insert</span>(<span class="ident">msg</span>.<span class="ident">id</span>(), <span class="ident">msg</span>);
                 <span class="self">self</span>.<span class="ident">handle_initialization</span>(<span class="ident">rng</span>, <span class="ident">m</span>, <span class="ident">n</span>, <span class="ident">key_gen_id</span>, <span class="ident">member_list</span>)
             }
-            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">message_cache</span>.<span class="ident">insert</span>(<span class="ident">msg</span>.<span class="ident">id</span>(), <span class="ident">msg</span>);
-                <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>)
-            }
+            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_proposal</span>(<span class="ident">key_gen_id</span>, <span class="ident">part</span>),
             <span class="ident">Message::Complaint</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">target</span>,
@@ -1629,7 +1689,8 @@
                 <span class="ident">keys_map</span>,
             } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_justification</span>(<span class="ident">key_gen_id</span>, <span class="ident">keys_map</span>),
             <span class="ident">Message::Acknowledgment</span> { <span class="ident">key_gen_id</span>, <span class="ident">ack</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">handle_ack</span>(<span class="ident">key_gen_id</span>, <span class="ident">ack</span>),
-        }
+        };
+        <span class="self">self</span>.<span class="ident">multicasting_messages</span>(<span class="ident">result</span>)
     }
 
     <span class="comment">// Handles an incoming initialize message. Creates the `Proposal` message once quorumn</span>
@@ -1874,9 +1935,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">timed_phase_transition</span><span class="op">&lt;</span><span class="ident">R</span>: <span class="ident">RngCore</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">rng</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">R</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
         <span class="macro">trace!</span>(<span class="string">&quot;{:?} current phase is {:?}&quot;</span>, <span class="self">self</span>, <span class="self">self</span>.<span class="ident">phase</span>);
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">phase</span> {
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">phase</span> {
             <span class="ident">Phase::Contribution</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">finalize_contributing_phase</span>(),
             <span class="ident">Phase::Complaining</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">finalize_complaining_phase</span>(<span class="ident">rng</span>),
             <span class="ident">Phase::Initialization</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">Error::UnexpectedPhase</span> {
@@ -1889,6 +1950,58 @@
             }),
 
             <span class="ident">Phase::Finalization</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec::new</span>()),
+        };
+        <span class="self">self</span>.<span class="ident">multicasting_messages</span>(<span class="ident">result</span>)
+    }
+
+    <span class="comment">// Specify the receiver of the DKG messages explicitly</span>
+    <span class="comment">// to avoid un-necessary broadcasting.</span>
+    <span class="kw">fn</span> <span class="ident">multicasting_messages</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">result</span>: <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">MessageAndTarget</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+        <span class="kw">match</span> <span class="ident">result</span> {
+            <span class="prelude-val">Ok</span>(<span class="ident">messages</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">messaging</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+                <span class="kw">for</span> <span class="ident">message</span> <span class="kw">in</span> <span class="ident">messages</span> {
+                    <span class="kw">match</span> <span class="ident">message</span> {
+                        <span class="ident">Message::Proposal</span> { <span class="kw-2">ref</span> <span class="ident">part</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                            <span class="comment">// Proposal to us cannot be used by other.</span>
+                            <span class="comment">// So the cache must be carried out on sender side.</span>
+                            <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">message_cache</span>.<span class="ident">insert</span>(<span class="ident">message</span>.<span class="ident">id</span>(), <span class="ident">message</span>.<span class="ident">clone</span>());
+
+                            <span class="kw">let</span> <span class="ident">receiver</span> <span class="op">=</span>
+                                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">node_id_from_index</span>(<span class="ident">part</span>.<span class="ident">receiver</span>) {
+                                    <span class="ident">name</span>
+                                } <span class="kw">else</span> {
+                                    <span class="macro">warn!</span>(
+                                        <span class="string">&quot;For a Proposal, Cannot get name of index {:?} among {:?}&quot;</span>,
+                                        <span class="ident">part</span>.<span class="ident">receiver</span>, <span class="self">self</span>.<span class="ident">names</span>
+                                    );
+                                    <span class="kw">continue</span>;
+                                };
+                            <span class="ident">messaging</span>.<span class="ident">push</span>((<span class="ident">receiver</span>, <span class="ident">message</span>));
+                        }
+                        <span class="ident">Message::Acknowledgment</span> { <span class="kw-2">ref</span> <span class="ident">ack</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+                            <span class="kw">let</span> <span class="ident">receiver</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">name</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">node_id_from_index</span>(<span class="ident">ack</span>.<span class="number">1</span>) {
+                                <span class="ident">name</span>
+                            } <span class="kw">else</span> {
+                                <span class="macro">warn!</span>(<span class="string">&quot;For an Acknowledgement, Cannot get name of index {:?} among {:?}&quot;</span>,
+                                    <span class="ident">ack</span>.<span class="number">1</span>, <span class="self">self</span>.<span class="ident">names</span>);
+                                <span class="kw">continue</span>;
+                            };
+                            <span class="ident">messaging</span>.<span class="ident">push</span>((<span class="ident">receiver</span>, <span class="ident">message</span>));
+                        }
+                        <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
+                            <span class="kw">for</span> <span class="ident">name</span> <span class="kw">in</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">names</span> {
+                                <span class="ident">messaging</span>.<span class="ident">push</span>((<span class="kw-2">*</span><span class="ident">name</span>, <span class="ident">message</span>.<span class="ident">clone</span>()));
+                            }
+                        }
+                    }
+                }
+                <span class="prelude-val">Ok</span>(<span class="ident">messaging</span>)
+            }
+            <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>),
         }
     }
 
@@ -2017,7 +2130,7 @@
     }
 
     <span class="doccomment">/// Returns the id of the index, or `None` if it is unknown.</span>
-    <span class="kw">fn</span> <span class="ident">node_id_from_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_index</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">node_id_from_index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node_index</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">XorName</span><span class="op">&gt;</span> {
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">name</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">names</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
             <span class="kw">if</span> <span class="ident">i</span> <span class="op">=</span><span class="op">=</span> <span class="ident">node_index</span> <span class="kw">as</span> <span class="ident">usize</span> {
                 <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">name</span>);
@@ -2042,7 +2155,16 @@
 
     <span class="doccomment">/// Returns `true` if in the phase of Finalization.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_finalized</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Finalization</span>
+        <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">phase</span> <span class="op">=</span><span class="op">=</span> <span class="ident">Phase::Finalization</span>;
+
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">result</span> {
+            <span class="macro">trace!</span>(<span class="string">&quot;incompleted DKG session containing:&quot;</span>);
+            <span class="kw">for</span> (<span class="ident">key</span>, <span class="ident">part</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">parts</span>.<span class="ident">iter</span>() {
+                <span class="kw">let</span> <span class="ident">acks</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">part</span>.<span class="ident">values</span>.<span class="ident">keys</span>().<span class="ident">cloned</span>().<span class="ident">collect</span>();
+                <span class="macro">trace!</span>(<span class="string">&quot;    Part from {:?}, and acks from {:?}&quot;</span>, <span class="ident">key</span>, <span class="ident">acks</span>);
+            }
+        }
+        <span class="ident">result</span>
     }
 
     <span class="doccomment">/// Returns the new secret key share and the public key set.</span>
