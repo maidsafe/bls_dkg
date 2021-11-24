@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.9.0](https://github.com/maidsafe/bls_dkg/compare/v0.8.0...v0.9.0) (2021-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* specify the receiver explicity to avoid it to be
+broadcasted unnecessarily.
+
+### Features
+
+* avoid broadcasting direct messages ([90591e2](https://github.com/maidsafe/bls_dkg/commit/90591e2e04a9a736e37afc47280f8c7edffffb4b))
+
 ## [0.8.0](https://github.com/maidsafe/bls_dkg/compare/v0.7.1...v0.8.0) (2021-11-19)
 
 
