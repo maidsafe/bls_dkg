@@ -151,18 +151,18 @@
 
 <span class="kw">impl</span> <span class="ident">Message</span> {
     <span class="comment">// Creator of the message.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">creator</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">creator</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="self">self</span> {
             <span class="ident">Message::Initialization</span> { <span class="ident">key_gen_id</span>, .. }
             <span class="op">|</span> <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, .. }
             <span class="op">|</span> <span class="ident">Message::Complaint</span> { <span class="ident">key_gen_id</span>, .. }
             <span class="op">|</span> <span class="ident">Message::Justification</span> { <span class="ident">key_gen_id</span>, .. }
-            <span class="op">|</span> <span class="ident">Message::Acknowledgment</span> { <span class="ident">key_gen_id</span>, .. } <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">key_gen_id</span>,
+            <span class="op">|</span> <span class="ident">Message::Acknowledgment</span> { <span class="ident">key_gen_id</span>, .. } =&gt; <span class="kw-2">*</span><span class="ident">key_gen_id</span>,
         }
     }
 
     <span class="comment">// Identifier of the message.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">XorName</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">XorName</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">Sha3::v256</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">hash</span> <span class="op">=</span> <span class="ident">Digest256::default</span>();
 
@@ -176,27 +176,27 @@
 }
 
 <span class="kw">impl</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">Message</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">formatter</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) -&gt; <span class="ident">fmt::Result</span> {
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="self">self</span> {
             <span class="ident">Message::Initialization</span> {
                 <span class="ident">key_gen_id</span>,
                 <span class="ident">member_list</span>,
                 ..
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write!</span>(
+            } =&gt; <span class="macro">write!</span>(
                 <span class="ident">formatter</span>,
                 <span class="string">&quot;Initialization({:?} - {:?})&quot;</span>,
                 <span class="ident">member_list</span>, <span class="ident">key_gen_id</span>
             ),
-            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Message::Proposal</span> { <span class="ident">key_gen_id</span>, <span class="ident">part</span> } =&gt; {
                 <span class="macro">write!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Proposal({} - {:?})&quot;</span>, <span class="ident">key_gen_id</span>, <span class="ident">part</span>)
             }
             <span class="ident">Message::Complaint</span> {
                 <span class="ident">key_gen_id</span>, <span class="ident">target</span>, ..
-            } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Complaint({} - {})&quot;</span>, <span class="ident">key_gen_id</span>, <span class="ident">target</span>),
-            <span class="ident">Message::Justification</span> { <span class="ident">key_gen_id</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            } =&gt; <span class="macro">write!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Complaint({} - {})&quot;</span>, <span class="ident">key_gen_id</span>, <span class="ident">target</span>),
+            <span class="ident">Message::Justification</span> { <span class="ident">key_gen_id</span>, .. } =&gt; {
                 <span class="macro">write!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Justification({})&quot;</span>, <span class="ident">key_gen_id</span>)
             }
-            <span class="ident">Message::Acknowledgment</span> { <span class="ident">key_gen_id</span>, <span class="ident">ack</span> } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">Message::Acknowledgment</span> { <span class="ident">key_gen_id</span>, <span class="ident">ack</span> } =&gt; {
                 <span class="macro">write!</span>(<span class="ident">formatter</span>, <span class="string">&quot;Acknowledgment({} - {:?})&quot;</span>, <span class="ident">key_gen_id</span>, <span class="ident">ack</span>)
             }
         }
