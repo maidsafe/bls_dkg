@@ -493,7 +493,7 @@ impl KeyGen {
             } => self.handle_justification(key_gen_id, keys_map),
             Message::Acknowledgment { key_gen_id, ack } => self.handle_ack(key_gen_id, ack),
         };
-        self.multicasting_messages(result)
+        self.multicasting_messages(result?)
     }
 
     // Handles an incoming initialize message. Creates the `Proposal` message once quorumn
@@ -638,7 +638,7 @@ impl KeyGen {
                     if self.phase == Phase::Commitment {
                         self.become_finalization();
                     } else {
-                        return self.finalize_contributing_phase();
+                        return Ok(self.finalize_contributing_phase());
                     }
                 }
             }
@@ -679,7 +679,7 @@ impl KeyGen {
                 .all(|part| part.acks.len() == self.names.len())
     }
 
-    fn finalize_contributing_phase(&mut self) -> Result<Vec<Message>, Error> {
+    fn finalize_contributing_phase(&mut self) -> Vec<Message> {
         self.phase = Phase::Complaining;
 
         for non_contributor in self.non_contributors().0 {
@@ -706,7 +706,7 @@ impl KeyGen {
             self.become_finalization();
         }
 
-        Ok(mem::take(&mut self.pending_complain_messages))
+        mem::take(&mut self.pending_complain_messages)
     }
 
     fn non_contributors(&self) -> (BTreeSet<u64>, BTreeSet<XorName>) {
@@ -741,7 +741,7 @@ impl KeyGen {
     ) -> Result<Vec<MessageAndTarget>, Error> {
         trace!("{:?} current phase is {:?}", self, self.phase);
         let result = match self.phase {
-            Phase::Contribution => self.finalize_contributing_phase(),
+            Phase::Contribution => Ok(self.finalize_contributing_phase()),
             Phase::Complaining => self.finalize_complaining_phase(rng),
             Phase::Initialization => Err(Error::UnexpectedPhase {
                 expected: Phase::Contribution,
@@ -754,58 +754,54 @@ impl KeyGen {
 
             Phase::Finalization => Ok(Vec::new()),
         };
-        self.multicasting_messages(result)
+        self.multicasting_messages(result?)
     }
 
     // Specify the receiver of the DKG messages explicitly
     // to avoid un-necessary broadcasting.
     fn multicasting_messages(
         &mut self,
-        result: Result<Vec<Message>, Error>,
+        messages: Vec<Message>,
     ) -> Result<Vec<MessageAndTarget>, Error> {
-        match result {
-            Ok(messages) => {
-                let mut messaging = Vec::new();
-                for message in messages {
-                    match message {
-                        Message::Proposal { ref part, .. } => {
-                            // Proposal to us cannot be used by other.
-                            // So the cache must be carried out on sender side.
-                            let _ = self.message_cache.insert(message.id(), message.clone());
+        let mut messaging = Vec::new();
+        for message in messages {
+            match message {
+                Message::Proposal { ref part, .. } => {
+                    // Proposal to us cannot be used by other.
+                    // So the cache must be carried out on sender side.
+                    let _ = self.message_cache.insert(message.id(), message.clone());
 
-                            let receiver =
-                                if let Some(name) = self.node_id_from_index(part.receiver) {
-                                    name
-                                } else {
-                                    warn!(
-                                        "For a Proposal, Cannot get name of index {:?} among {:?}",
-                                        part.receiver, self.names
-                                    );
-                                    continue;
-                                };
-                            messaging.push((receiver, message));
-                        }
-                        Message::Acknowledgment { ref ack, .. } => {
-                            let receiver = if let Some(name) = self.node_id_from_index(ack.1) {
-                                name
-                            } else {
-                                warn!("For an Acknowledgement, Cannot get name of index {:?} among {:?}",
-                                    ack.1, self.names);
-                                continue;
-                            };
-                            messaging.push((receiver, message));
-                        }
-                        _ => {
-                            for name in &self.names {
-                                messaging.push((*name, message.clone()));
-                            }
-                        }
+                    let receiver = if let Some(name) = self.node_id_from_index(part.receiver) {
+                        name
+                    } else {
+                        warn!(
+                            "For a Proposal, Cannot get name of index {:?} among {:?}",
+                            part.receiver, self.names
+                        );
+                        continue;
+                    };
+                    messaging.push((receiver, message));
+                }
+                Message::Acknowledgment { ref ack, .. } => {
+                    let receiver = if let Some(name) = self.node_id_from_index(ack.1) {
+                        name
+                    } else {
+                        warn!(
+                            "For an Acknowledgement, Cannot get name of index {:?} among {:?}",
+                            ack.1, self.names
+                        );
+                        continue;
+                    };
+                    messaging.push((receiver, message));
+                }
+                _ => {
+                    for name in &self.names {
+                        messaging.push((*name, message.clone()));
                     }
                 }
-                Ok(messaging)
             }
-            Err(err) => Err(err),
         }
+        Ok(messaging)
     }
 
     // Handles a `Complaint` message.
