@@ -17,8 +17,7 @@ mod tests;
 
 use bincode::{self, deserialize, serialize};
 use blsttc::{
-    ff::Field,
-    group::CurveAffine,
+    group::{ff::Field, prime::PrimeCurveAffine},
     poly::{BivarCommitment, BivarPoly, Poly},
     serde_impl::FieldWrap,
     Fr, G1Affine,
@@ -33,6 +32,7 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::{
     fmt::{self, Debug, Formatter},
     mem,
+    ops::{AddAssign, Mul},
 };
 use xor_name::XorName;
 
@@ -977,7 +977,7 @@ impl KeyGen {
         let is_complete = |part: &&ProposalState| part.is_complete(self.threshold);
         for part in self.parts.values().filter(is_complete) {
             pk_commitment += part.commitment.row(0);
-            let row = Poly::interpolate(part.values.iter().take(self.threshold + 1));
+            let row = Poly::interpolate(part.values.iter().take(self.threshold + 1)).ok()?;
             sk_val.add_assign(&row.evaluate(0));
         }
         let sk = SecretKeyShare::from_mut(&mut sk_val);
@@ -1089,7 +1089,8 @@ impl KeyGen {
             let val = deserialize::<FieldWrap<Fr>>(&ser_val)
                 .map_err(|_| AcknowledgmentFault::DeserializeValue)?
                 .into_inner();
-            if part.commitment.evaluate(our_index + 1, sender_index + 1) != G1Affine::one().mul(val)
+            if part.commitment.evaluate(our_index + 1, sender_index + 1)
+                != G1Affine::generator().mul(val)
             {
                 return Err(AcknowledgmentFault::ValueAcknowledgment);
             }
