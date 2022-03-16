@@ -431,7 +431,7 @@ fn network_churning() -> Result<()> {
             peer_ids.push(PeerId::new());
             naming_index += 1;
         } else {
-            let _ = peer_ids.remove(rng.gen_range(0, peer_ids.len()));
+            let _ = peer_ids.remove(rng.gen_range(0..peer_ids.len()));
         }
 
         let threshold: usize = peer_ids.len() * 2 / 3;
