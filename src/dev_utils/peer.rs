@@ -29,9 +29,8 @@ pub struct PeerId {
 impl PeerId {
     pub fn new() -> Self {
         let (public_key, secret_key) = gen_keypair();
-        let mut rng = rand::thread_rng();
         Self {
-            id: rng.gen(),
+            id: rand8::random(),
             public_key,
             secret_key,
         }
