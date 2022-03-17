@@ -21,5 +21,10 @@ extern crate log;
 pub mod key_gen;
 pub use key_gen::*;
 
+// export these because they are used in our public API.
+pub use blsttc;
+pub use rand_core;
+pub use xor_name;
+
 #[cfg(test)]
 mod dev_utils;
