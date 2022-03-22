@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.10.0](https://github.com/maidsafe/bls_dkg/compare/v0.9.2...v0.10.0) (2022-03-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* blsttc and rand versions might conflict
+with versions used by dependent packages.
+
+We also:
+
+* bump rand from 0.7.3 to 0.8.5
+* bump rand_core from 0.5.1 to 0.6.3
+* bump xor_name from 3.0.0 to 4.0.0
+
+These make us compatible with deps in blsttc.
+
+* bump blsttc from 3.1.0 to 5.1.0 ([a9d3581](https://github.com/maidsafe/bls_dkg/commit/a9d358100f8a449308def71d0e361e5532acd897))
+
 ### [0.9.2](https://github.com/maidsafe/bls_dkg/compare/v0.9.1...v0.9.2) (2022-03-18)
 
 ### [0.9.1](https://github.com/maidsafe/bls_dkg/compare/v0.9.0...v0.9.1) (2021-12-09)
