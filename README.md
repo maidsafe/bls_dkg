@@ -13,7 +13,9 @@ This algorithm is synchronous and will require participants are disqualified for
 
 ## License
 
-This Safe Network library is dual-licensed under the Modified BSD ([LICENSE-BSD](LICENSE-BSD) https://opensource.org/licenses/BSD-3-Clause) or the MIT license ([LICENSE-MIT](LICENSE-MIT) http://opensource.org/licenses/MIT) at your option.
+This Safe Network library is licensed under the BSD-3-Clause license.
+
+See the [LICENSE](LICENSE) file for more details.
 
 ## Contributing
 
