@@ -8,7 +8,7 @@ license = "BSD-3-Clause"
 name = "bls_dkg"
 readme = "README.md"
 repository = "https://github.com/maidsafe/bls_dkg"
-version = "0.10.2"
+version = "0.10.3"
 
 [dependencies]
 aes = "~0.7.4"
