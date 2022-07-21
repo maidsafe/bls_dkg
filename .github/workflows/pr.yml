@@ -32,28 +32,16 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Check formatting
+      - shell: bash
         run: cargo fmt --all -- --check
 
       - shell: bash
-        run: ./scripts/clippy
+        run: cargo clippy --all-targets
 
       - uses: maidsafe/verify-licensing-info@main
         name: verify licensing
         with:
           company-name: MaidSafe
-
-  check_pr_size:
-    if: "!startsWith(github.event.pull_request.title, 'Automated version bump')"
-    name: Check PR size doesn't break set limit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: '0'
-      - uses: maidsafe/pr_size_checker@v2
-        with:
-          max_lines_changed: 200
 
   coverage:
     if: "!startsWith(github.event.pull_request.title, 'Automated version bump')"
@@ -145,7 +133,7 @@ jobs:
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
       - shell: bash
-        run: ./scripts/tests
+        run: cargo test --release
 
   test-publish:
     if: "!startsWith(github.event.pull_request.title, 'Automated version bump')"
