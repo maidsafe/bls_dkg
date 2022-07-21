@@ -311,7 +311,14 @@ fn threshold_signature() -> Result<()> {
                     "Unexpected Success: Signatures cannot be aggregated with THRESHOLD shares"
                 ));
             }
-            Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
+            Err(e) => assert_eq!(
+                format!("{:?}", e),
+                format!(
+                    "NotEnoughShares {{ current: {}, required: {} }}",
+                    pub_key_set.threshold(),
+                    THRESHOLD + 1
+                )
+            ),
         }
     }
 
@@ -408,7 +415,14 @@ fn threshold_encrypt() -> Result<()> {
                     "Unexpected Success: Cannot decrypt by aggregating THRESHOLD shares"
                 ))
             }
-            Err(e) => assert_eq!(format!("{:?}", e), "NotEnoughShares".to_string()),
+            Err(e) => assert_eq!(
+                format!("{:?}", e),
+                format!(
+                    "NotEnoughShares {{ current: {}, required: {} }}",
+                    pub_key_set.threshold(),
+                    THRESHOLD + 1
+                )
+            ),
         }
     }
     Ok(())
