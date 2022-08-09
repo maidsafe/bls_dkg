@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.5](https://github.com/maidsafe/bls_dkg/compare/v0.10.4...v0.10.5) (2022-08-09)
+
 ### [0.10.4](https://github.com/maidsafe/bls_dkg/compare/v0.10.3...v0.10.4) (2022-07-21)
 
 ### [0.10.3](https://github.com/maidsafe/bls_dkg/compare/v0.10.2...v0.10.3) (2022-06-14)
